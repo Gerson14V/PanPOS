@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\DepartamentoController;
 use App\Http\Controllers\Api\ProductoController;
+use App\Http\Controllers\Api\ReporteBackupController;
 use App\Http\Controllers\Api\TurnoCajaController;
 use App\Http\Controllers\Api\UsuarioConfigController;
 use App\Http\Controllers\Api\VentaController;
@@ -36,8 +37,13 @@ Route::post('turnos/abrir', [TurnoCajaController::class, 'abrir']);
 Route::get('turnos/{turno}/resumen', [TurnoCajaController::class, 'resumen']);
 Route::post('turnos/{turno}/movimientos', [TurnoCajaController::class, 'registrarMovimiento']);
 Route::post('turnos/{turno}/cerrar', [TurnoCajaController::class, 'cerrar']);
+Route::get('turnos/{turno}/exportar-excel', [ReporteBackupController::class, 'exportarCorteExcel']);
 
 // Ventas, Tickets en Espera y Anulaciones
 Route::get('ventas', [VentaController::class, 'index']);
 Route::post('ventas', [VentaController::class, 'store']);
 Route::post('ventas/{venta}/anular', [VentaController::class, 'anular']);
+
+// Reportes y Respaldos de Base de Datos
+Route::get('reportes/ventas-periodo', [ReporteBackupController::class, 'ventasPorPeriodo']);
+Route::post('sistema/backup', [ReporteBackupController::class, 'ejecutarBackupManual']);

@@ -4,13 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\TurnoCaja;
+use App\Services\BackupService;
 use App\Services\TurnoCajaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TurnoCajaController extends Controller
 {
-    public function __construct(private TurnoCajaService $turnoCajaService) {}
+    public function __construct(
+        private TurnoCajaService $turnoCajaService,
+        private BackupService $backupService
+    ) {}
 
     public function turnoActivo(): JsonResponse
     {
@@ -66,6 +70,12 @@ class TurnoCajaController extends Controller
             $datos['observaciones'] ?? null
         );
 
-        return response()->json($cerrado);
+        // Disparo automático de respaldo local y USB al cerrar turno
+        $respaldo = $this->backupService->generarRespaldo("turno_{$turno->id}");
+
+        return response()->json([
+            'turno' => $cerrado,
+            'respaldo' => $respaldo,
+        ]);
     }
 }
