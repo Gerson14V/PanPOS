@@ -54,7 +54,6 @@ class UsuarioConfigController extends Controller
         return response()->json($usuario, 201);
     }
 
-    // Conmutación rápida de rol (1 clic) y estado activo, protegiendo al último Admin
     public function actualizarUsuario(Request $request, Usuario $usuario): JsonResponse
     {
         $datos = $request->validate([
@@ -98,7 +97,10 @@ class UsuarioConfigController extends Controller
         ]);
 
         foreach ($datos['configuraciones'] as $clave => $valor) {
-            ConfiguracionSistema::where('clave', $clave)->update(['valor' => (string) $valor]);
+            ConfiguracionSistema::updateOrCreate(
+                ['clave' => $clave],
+                ['valor' => (string) ($valor ?? '')]
+            );
         }
 
         return response()->json(ConfiguracionSistema::pluck('valor', 'clave'));

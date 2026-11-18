@@ -27,30 +27,76 @@ class TurnoCajaService
         ]);
     }
 
+    // Calcula cuánto efectivo físico exacto hay en la gaveta en este instante
+    public function calcularEfectivoDisponible(TurnoCaja $turno): float
+    {
+        $ventasCompletadas = $turno->ventas()->where('estado', 'completada')->pluck('id');
+
+        $ventasEfectivo = (float) DB::table('pagos_venta')
+            ->whereIn('venta_id', $ventasCompletadas)
+            ->where('metodo_pago', 'efectivo')
+            ->sum('monto');
+
+        $movimientos = $turno->movimientosCaja()->where('metodo_pago', 'efectivo')->get();
+
+        $entradas = (float) $movimientos->where('tipo', 'entrada')->sum('monto');
+        $abonos = (float) $movimientos->where('tipo', 'abono_cliente')->sum('monto');
+        $salidas = (float) $movimientos->where('tipo', 'salida')->sum('monto');
+        $prestamos = (float) $movimientos->where('tipo', 'prestamo_cliente')->sum('monto');
+
+        return round((float) $turno->monto_inicial + $ventasEfectivo + $entradas + $abonos - $salidas - $prestamos, 2);
+    }
+
     public function registrarMovimientoCaja(array $datos): MovimientoCaja
     {
         return DB::transaction(function () use ($datos) {
-            $movimiento = MovimientoCaja::create([
-                'turno_id' => $datos['turno_id'],
-                'usuario_id' => $datos['usuario_id'],
-                'cliente_id' => $datos['cliente_id'] ?? null,
-                'tipo' => $datos['tipo'],
-                'metodo_pago' => $datos['metodo_pago'] ?? 'efectivo',
-                'monto' => $datos['monto'],
-                'concepto' => $datos['concepto'],
-            ]);
+            $turno = TurnoCaja::lockForUpdate()->findOrFail($datos['turno_id']);
+            $monto = round((float) $datos['monto'], 2);
+            $metodoPago = $datos['metodo_pago'] ?? 'efectivo';
 
-            if (!empty($datos['cliente_id'])) {
-                $cliente = Cliente::lockForUpdate()->findOrFail($datos['cliente_id']);
-
-                if ($datos['tipo'] === 'prestamo_cliente') {
-                    $cliente->increment('saldo_deudor', $datos['monto']);
-                } elseif ($datos['tipo'] === 'abono_cliente') {
-                    $cliente->decrement('saldo_deudor', $datos['monto']);
+            // 1. Validar que si sale dinero en efectivo (Préstamo a cliente o Salida F8), alcance el efectivo en caja
+            if (in_array($datos['tipo'], ['prestamo_cliente', 'salida'], true) && $metodoPago === 'efectivo') {
+                $efectivoEnCaja = $this->calcularEfectivoDisponible($turno);
+                if ($monto > $efectivoEnCaja) {
+                    throw ValidationException::withMessages([
+                        'monto' => "Fondos insuficientes en caja. Efectivo disponible actual: ₡" . number_format($efectivoEnCaja, 2) . " (Intentó retirar: ₡" . number_format($monto, 2) . ").",
+                    ]);
                 }
             }
 
-            return $movimiento->load('cliente');
+            // 2. Validar operaciones de crédito con cliente (Abono no puede superar la deuda)
+            if (!empty($datos['cliente_id'])) {
+                $cliente = Cliente::lockForUpdate()->findOrFail($datos['cliente_id']);
+                $deudaActual = round((float) $cliente->saldo_deudor, 2);
+
+                if ($datos['tipo'] === 'abono_cliente') {
+                    if ($deudaActual <= 0) {
+                        throw ValidationException::withMessages([
+                            'monto' => "El cliente {$cliente->nombre} no tiene deuda pendiente por cobrar (Saldo: ₡0).",
+                        ]);
+                    }
+                    if ($monto > $deudaActual) {
+                        throw ValidationException::withMessages([
+                            'monto' => "No se puede abonar más de lo que debe. Deuda actual de {$cliente->nombre}: ₡" . number_format($deudaActual, 2) . ".",
+                        ]);
+                    }
+                    $cliente->decrement('saldo_deudor', $monto);
+                } elseif ($datos['tipo'] === 'prestamo_cliente') {
+                    $cliente->increment('saldo_deudor', $monto);
+                }
+            }
+
+            $movimiento = MovimientoCaja::create([
+                'turno_id' => $turno->id,
+                'usuario_id' => $datos['usuario_id'],
+                'cliente_id' => $datos['cliente_id'] ?? null,
+                'tipo' => $datos['tipo'],
+                'metodo_pago' => $metodoPago,
+                'monto' => $monto,
+                'concepto' => $datos['concepto'],
+            ]);
+
+            return $movimiento->load(['cliente', 'usuario:id,nombre']);
         });
     }
 
@@ -69,7 +115,10 @@ class TurnoCajaService
         $ventasSinpe = (float) ($pagosPorMetodo['sinpe'] ?? 0);
         $ventasCredito = (float) ($pagosPorMetodo['credito'] ?? 0);
 
-        $movimientos = $turno->movimientosCaja()->get();
+        $movimientos = $turno->movimientosCaja()
+            ->with(['cliente:id,nombre', 'usuario:id,nombre'])
+            ->latest('created_at')
+            ->get();
 
         $entradasEfectivo = (float) $movimientos->where('tipo', 'entrada')->where('metodo_pago', 'efectivo')->sum('monto');
         $abonosEfectivo = (float) $movimientos->where('tipo', 'abono_cliente')->where('metodo_pago', 'efectivo')->sum('monto');
@@ -104,8 +153,8 @@ class TurnoCajaService
 
         return [
             'turno' => $turno->load('usuario:id,nombre'),
-            'ventas_totales' => $ventasEfectivo + $ventasTarjeta + $ventasSinpe + $ventasCredito,
-            'ganancia_bruta_total' => (float) $porDepartamento->sum('ganancia_bruta'),
+            'ventas_totales' => round($ventasEfectivo + $ventasTarjeta + $ventasSinpe + $ventasCredito, 2),
+            'ganancia_bruta_total' => round((float) $porDepartamento->sum('ganancia_bruta'), 2),
             'desglose_pagos' => [
                 'efectivo' => $ventasEfectivo,
                 'tarjeta' => $ventasTarjeta,
@@ -122,7 +171,7 @@ class TurnoCajaService
                 'efectivo_esperado' => round($efectivoEsperado, 2),
             ],
             'ventas_por_departamento' => $porDepartamento,
-            'movimientos_caja' => $movimientos->load('cliente:id,nombre'),
+            'movimientos_caja' => $movimientos,
             'anulaciones' => [
                 'cantidad' => $ventasAnuladas->count(),
                 'monto_total_anulado' => (float) $ventasAnuladas->sum('total'),

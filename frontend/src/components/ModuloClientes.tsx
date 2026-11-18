@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
 import { api } from '../api/client';
 import { Cliente } from '../types/models';
@@ -7,23 +7,36 @@ export const ModuloClientes: React.FC = () => {
   const { clientes, usuario, turno, recargarCatalogos } = usePos();
   const [soloDeudores, setSoloDeudores] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  const [efectivoDisponibleCaja, setEfectivoDisponibleCaja] = useState<number>(0);
 
-  // Estado de cuenta y modales
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null);
   const [detalleCuenta, setDetalleCuenta] = useState<{ ventas_fiadas: any[]; prestamos_y_abonos: any[] } | null>(null);
 
-  // Formulario Nuevo/Editar Cliente
   const [modalCliente, setModalCliente] = useState(false);
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [notas, setNotas] = useState('');
 
-  // Formulario Abono / Préstamo de Efectivo
   const [modalOperacion, setModalOperacion] = useState<'abono_cliente' | 'prestamo_cliente' | null>(null);
   const [montoOp, setMontoOp] = useState('');
   const [metodoOp, setMetodoOp] = useState<'efectivo' | 'sinpe' | 'tarjeta'>('efectivo');
   const [conceptoOp, setConceptoOp] = useState('');
-  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [alerta, setAlerta] = useState<{ tipo: 'success' | 'danger'; texto: string } | null>(null);
+  const [errorModal, setErrorModal] = useState<string | null>(null);
+
+  const cargarEfectivoCaja = async () => {
+    if (!turno) return;
+    try {
+      const res = await api.get(`/turnos/${turno.id}/resumen`);
+      setEfectivoDisponibleCaja(Number(res.data.gaveta_efectivo?.efectivo_esperado || 0));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    cargarEfectivoCaja();
+  }, [turno, clientes]);
 
   const clientesFiltrados = clientes.filter((c) => {
     if (soloDeudores && Number(c.saldo_deudor) <= 0) return false;
@@ -35,7 +48,8 @@ export const ModuloClientes: React.FC = () => {
   const verEstadoCuenta = async (cliente: Cliente) => {
     setClienteSeleccionado(cliente);
     const res = await api.get(`/clientes/${cliente.id}/estado-cuenta`);
-    setDetalleCuenta(res.data);
+    setDetalleCuenta(res.data.cliente ? res.data : null);
+    setClienteSeleccionado(res.data.cliente);
   };
 
   const guardarCliente = async (e: React.FormEvent) => {
@@ -46,45 +60,92 @@ export const ModuloClientes: React.FC = () => {
     setNotas('');
     setModalCliente(false);
     await recargarCatalogos();
-    setMensaje('Cliente registrado correctamente.');
+    setAlerta({ tipo: 'success', texto: 'Cliente registrado correctamente.' });
+  };
+
+  const abrirModalOperacion = async (tipo: 'abono_cliente' | 'prestamo_cliente') => {
+    setErrorModal(null);
+    setMontoOp('');
+    setConceptoOp('');
+    setMetodoOp('efectivo');
+    await cargarEfectivoCaja();
+    setModalOperacion(tipo);
   };
 
   const registrarOperacion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clienteSeleccionado || !turno || !usuario || !modalOperacion) return;
+    setErrorModal(null);
 
-    await api.post(`/clientes/${clienteSeleccionado.id}/operacion-credito`, {
-      turno_id: turno.id,
-      usuario_id: usuario.id,
-      tipo: modalOperacion,
-      metodo_pago: metodoOp,
-      monto: Number(montoOp),
-      concepto: conceptoOp || (modalOperacion === 'abono_cliente' ? 'Abono a cuenta' : 'Préstamo de efectivo en caja'),
-    });
+    const monto = Number(montoOp);
+    const deudaCliente = Number(clienteSeleccionado.saldo_deudor);
 
-    setMontoOp('');
-    setConceptoOp('');
-    setModalOperacion(null);
-    await recargarCatalogos();
-    await verEstadoCuenta(clienteSeleccionado);
-    setMensaje('Operación registrada y saldo actualizado.');
+    // Validación 1: Abono no puede superar la deuda
+    if (modalOperacion === 'abono_cliente') {
+      if (deudaCliente <= 0) {
+        setErrorModal(`⚠️ ${clienteSeleccionado.nombre} no tiene deuda pendiente (Saldo: ₡0).`);
+        return;
+      }
+      if (monto > deudaCliente) {
+        setErrorModal(
+          `⚠️ No se puede abonar más plata de la que se debe. Deuda actual: ₡${deudaCliente.toLocaleString()} (Intentó abonar: ₡${monto.toLocaleString()}).`
+        );
+        return;
+      }
+    }
+
+    // Validación 2: Préstamo en efectivo no puede superar el efectivo disponible en caja
+    if (modalOperacion === 'prestamo_cliente' && metodoOp === 'efectivo') {
+      if (monto > efectivoDisponibleCaja) {
+        setErrorModal(
+          `⚠️ No hay suficiente efectivo en caja para este préstamo. Efectivo disponible actual en gaveta: ₡${efectivoDisponibleCaja.toLocaleString()} (Intentó prestar: ₡${monto.toLocaleString()}).`
+        );
+        return;
+      }
+    }
+
+    try {
+      await api.post(`/clientes/${clienteSeleccionado.id}/operacion-credito`, {
+        turno_id: turno.id,
+        usuario_id: usuario.id,
+        tipo: modalOperacion,
+        metodo_pago: metodoOp,
+        monto,
+        concepto: conceptoOp || (modalOperacion === 'abono_cliente' ? 'Abono a deuda' : 'Préstamo de efectivo en caja'),
+      });
+
+      setModalOperacion(null);
+      await recargarCatalogos();
+      await verEstadoCuenta(clienteSeleccionado);
+      await cargarEfectivoCaja();
+      setAlerta({ tipo: 'success', texto: 'Operación registrada y saldo actualizado correctamente.' });
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.errors?.monto?.[0] ||
+        err.response?.data?.message ||
+        'No se pudo procesar la operación.';
+      setErrorModal(`⚠️ ${msg}`);
+    }
   };
 
   return (
     <div className="container-fluid py-3">
-      {mensaje && (
-        <div className="alert alert-success alert-dismissible fade show py-2">
-          {mensaje}
-          <button type="button" className="btn-close py-2" onClick={() => setMensaje(null)} />
+      {alerta && (
+        <div className={`alert alert-${alerta.tipo} alert-dismissible fade show py-2`}>
+          {alerta.texto}
+          <button type="button" className="btn-close py-2" onClick={() => setAlerta(null)} />
         </div>
       )}
 
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
         <div>
-          <h4 className="fw-bold mb-0">F2 — Clientes, Cuentas por Cobrar (Fiados) y Préstamos</h4>
+          <h4 className="fw-bold mb-0">F2 — Clientes, Fiados y Préstamos</h4>
+          <small className="text-muted me-3">
+            Total por cobrar: <strong className="text-danger fs-5">₡{totalDeudaGeneral.toLocaleString()}</strong>
+          </small>
           <small className="text-muted">
-            Total por cobrar en la panadería:{' '}
-            <strong className="text-danger fs-5">₡{totalDeudaGeneral.toLocaleString()}</strong>
+            Efectivo disponible en caja para préstamos:{' '}
+            <strong className="text-success fs-5">₡{efectivoDisponibleCaja.toLocaleString()}</strong>
           </small>
         </div>
         <div className="d-flex gap-2">
@@ -101,7 +162,6 @@ export const ModuloClientes: React.FC = () => {
       </div>
 
       <div className="row g-3">
-        {/* Lista de Clientes */}
         <div className="col-lg-5">
           <div className="card shadow-sm border-0">
             <div className="card-header bg-body-tertiary">
@@ -127,18 +187,15 @@ export const ModuloClientes: React.FC = () => {
                     <div className="fw-bold">{c.nombre}</div>
                     {c.telefono && <small className="opacity-75">Tel: {c.telefono}</small>}
                   </div>
-                  <div className="text-end">
-                    <span className={`badge fs-6 ${Number(c.saldo_deudor) > 0 ? 'bg-danger' : 'bg-success'}`}>
-                      ₡{Number(c.saldo_deudor).toLocaleString()}
-                    </span>
-                  </div>
+                  <span className={`badge fs-6 ${Number(c.saldo_deudor) > 0 ? 'bg-danger' : 'bg-success'}`}>
+                    ₡{Number(c.saldo_deudor).toLocaleString()}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Estado de Cuenta Detallado */}
         <div className="col-lg-7">
           {!clienteSeleccionado ? (
             <div className="card shadow-sm border-0 p-5 text-center text-muted">
@@ -149,18 +206,21 @@ export const ModuloClientes: React.FC = () => {
               <div className="card-header d-flex flex-wrap justify-content-between align-items-center bg-body-tertiary">
                 <div>
                   <h5 className="fw-bold mb-0">{clienteSeleccionado.nombre}</h5>
-                  <span className="text-muted small">{clienteSeleccionado.notas || 'Sin notas adicionales'}</span>
+                  <span className="text-danger fw-bold">
+                    Deuda Actual: ₡{Number(clienteSeleccionado.saldo_deudor).toLocaleString()}
+                  </span>
                 </div>
                 <div className="d-flex gap-2">
                   <button
                     className="btn btn-success fw-bold"
-                    onClick={() => setModalOperacion('abono_cliente')}
+                    disabled={Number(clienteSeleccionado.saldo_deudor) <= 0}
+                    onClick={() => abrirModalOperacion('abono_cliente')}
                   >
                     💵 Abonar a Deuda
                   </button>
                   <button
                     className="btn btn-warning fw-bold"
-                    onClick={() => setModalOperacion('prestamo_cliente')}
+                    onClick={() => abrirModalOperacion('prestamo_cliente')}
                   >
                     🤝 Prestar Efectivo de Caja
                   </button>
@@ -178,7 +238,7 @@ export const ModuloClientes: React.FC = () => {
                     <thead>
                       <tr>
                         <th>Fecha</th>
-                        <th>Tipo</th>
+                        <th>Operación</th>
                         <th>Método</th>
                         <th>Concepto</th>
                         <th className="text-end">Monto</th>
@@ -261,7 +321,7 @@ export const ModuloClientes: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Abono o Préstamo de Efectivo */}
+      {/* Modal Abono o Préstamo con Validación Estricta */}
       {modalOperacion && clienteSeleccionado && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">
@@ -275,25 +335,72 @@ export const ModuloClientes: React.FC = () => {
                 <button type="button" className="btn-close" onClick={() => setModalOperacion(null)} />
               </div>
               <div className="modal-body">
+                {errorModal && <div className="alert alert-danger fw-semibold">{errorModal}</div>}
+
+                <div className="alert alert-secondary py-2 d-flex justify-content-between">
+                  {modalOperacion === 'abono_cliente' ? (
+                    <>
+                      <span>Deuda máxima abonable:</span>
+                      <strong className="text-danger">₡{Number(clienteSeleccionado.saldo_deudor).toLocaleString()}</strong>
+                    </>
+                  ) : (
+                    <>
+                      <span>Efectivo disponible hoy en gaveta:</span>
+                      <strong className="text-success">₡{efectivoDisponibleCaja.toLocaleString()}</strong>
+                    </>
+                  )}
+                </div>
+
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Monto (₡)</label>
-                  <input type="number" min="1" className="form-control form-control-lg fw-bold" value={montoOp} onChange={(e) => setMontoOp(e.target.value)} autoFocus required />
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      min="1"
+                      step="any"
+                      className="form-control form-control-lg fw-bold"
+                      value={montoOp}
+                      onChange={(e) => setMontoOp(e.target.value)}
+                      autoFocus
+                      required
+                    />
+                    {modalOperacion === 'abono_cliente' && (
+                      <button
+                        type="button"
+                        className="btn btn-outline-success fw-bold"
+                        onClick={() => setMontoOp(String(clienteSeleccionado.saldo_deudor))}
+                      >
+                        Saldar Total (₡{Number(clienteSeleccionado.saldo_deudor).toLocaleString()})
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="mb-3">
-                  <label className="form-label fw-semibold">Método</label>
-                  <select className="form-select" value={metodoOp} onChange={(e) => setMetodoOp(e.target.value as any)}>
-                    <option value="efectivo">Efectivo (Afecta Gaveta)</option>
-                    <option value="sinpe">SINPE Móvil</option>
-                    <option value="tarjeta">Tarjeta</option>
-                  </select>
-                </div>
+
+                {modalOperacion === 'abono_cliente' && (
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold">Método de Pago del Abono</label>
+                    <select className="form-select" value={metodoOp} onChange={(e) => setMetodoOp(e.target.value as any)}>
+                      <option value="efectivo">Efectivo (Entra a Gaveta)</option>
+                      <option value="sinpe">SINPE Móvil</option>
+                      <option value="tarjeta">Tarjeta</option>
+                    </select>
+                  </div>
+                )}
+
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Concepto / Observación</label>
-                  <input className="form-control" placeholder="Ej: Abono quincenal / Préstamo para vuelto" value={conceptoOp} onChange={(e) => setConceptoOp(e.target.value)} />
+                  <input
+                    className="form-control"
+                    placeholder="Ej: Abono quincenal / Préstamo en efectivo"
+                    value={conceptoOp}
+                    onChange={(e) => setConceptoOp(e.target.value)}
+                  />
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="submit" className="btn btn-success w-100 fw-bold">Confirmar Operación</button>
+                <button type="submit" className="btn btn-success w-100 fw-bold btn-lg">
+                  Confirmar Operación
+                </button>
               </div>
             </form>
           </div>

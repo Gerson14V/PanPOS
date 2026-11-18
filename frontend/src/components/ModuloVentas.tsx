@@ -23,7 +23,6 @@ export const ModuloVentas: React.FC = () => {
   const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'danger' | 'warning'; texto: string } | null>(null);
   const inputScanRef = useRef<HTMLInputElement>(null);
 
-  // Modales operativos de Caja
   const [modalCobro, setModalCobro] = useState(false);
   const [modalComun, setModalComun] = useState(false);
   const [modalCajaMov, setModalCajaMov] = useState<'entrada' | 'salida' | null>(null);
@@ -31,7 +30,6 @@ export const ModuloVentas: React.FC = () => {
   const [ventasEnEspera, setVentasEnEspera] = useState<any[]>([]);
   const [ventaEnEsperaId, setVentaEnEsperaId] = useState<number | null>(null);
 
-  // Estados para Cobro (F12) - Simple y Mixto
   const [metodoPrincipal, setMetodoPrincipal] = useState<'efectivo' | 'tarjeta' | 'sinpe' | 'credito' | 'mixto'>('efectivo');
   const [pagaCon, setPagaCon] = useState('');
   const [clienteId, setClienteId] = useState<string>('');
@@ -40,18 +38,17 @@ export const ModuloVentas: React.FC = () => {
   const [montoSinpeMixto, setMontoSinpeMixto] = useState('0');
   const [montoCreditoMixto, setMontoCreditoMixto] = useState('0');
 
-  // Estados Artículo Común y Movimientos F7/F8
   const [comunDesc, setComunDesc] = useState('Pan / Repostería');
   const [comunPrecio, setComunPrecio] = useState('');
   const [comunCant, setComunCant] = useState('1');
   const [movMonto, setMovMonto] = useState('');
   const [movConcepto, setMovConcepto] = useState('');
+  const [errorMovCaja, setErrorMovCaja] = useState<string | null>(null);
 
   const totalVenta = carrito.reduce((acc, i) => acc + i.subtotal, 0);
   const mostrarRapidos = (configuracion['panel_botones_rapidos'] ?? '1') === '1';
   const botonesRapidos = productos.filter((p) => p.mostrar_boton_rapido);
 
-  // Atajos de teclado globales en Caja (F6, F7, F8, F12)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F12') {
@@ -62,9 +59,11 @@ export const ModuloVentas: React.FC = () => {
         abrirTicketsEspera();
       } else if (e.key === 'F7') {
         e.preventDefault();
+        setErrorMovCaja(null);
         setModalCajaMov('entrada');
       } else if (e.key === 'F8') {
         e.preventDefault();
+        setErrorMovCaja(null);
         setModalCajaMov('salida');
       }
     };
@@ -72,28 +71,35 @@ export const ModuloVentas: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [carrito]);
 
-  // Escaneo instantáneo en RAM por código de barras, código corto ('01'..'99') o nombre
   const handleScanSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const termino = busqueda.trim();
+    let termino = busqueda.trim();
     if (!termino) return;
 
-    // 1. Coincidencia exacta por código de barras o código corto ('01', '1' -> '01')
+    let cantidadMultiplicador = 1;
+    if (termino.includes('*')) {
+      const partes = termino.split('*');
+      const cantParseada = parseInt(partes[0], 10);
+      if (!isNaN(cantParseada) && cantParseada > 0 && partes[1]) {
+        cantidadMultiplicador = cantParseada;
+        termino = partes[1].trim();
+      }
+    }
+
     const codigoNormalizado = termino.length === 1 && /^\d$/.test(termino) ? `0${termino}` : termino;
     const exacto = productos.find(
       (p) => p.codigo_barras.toLowerCase() === termino.toLowerCase() || p.codigo_barras === codigoNormalizado
     );
 
     if (exacto) {
-      agregarAlCarrito(exacto, 1);
+      agregarAlCarrito(exacto, cantidadMultiplicador);
       setBusqueda('');
       return;
     }
 
-    // 2. Búsqueda parcial por nombre
     const porNombre = productos.filter((p) => p.nombre.toLowerCase().includes(termino.toLowerCase()));
     if (porNombre.length === 1) {
-      agregarAlCarrito(porNombre[0], 1);
+      agregarAlCarrito(porNombre[0], cantidadMultiplicador);
       setBusqueda('');
     } else if (porNombre.length === 0) {
       setMensaje({ tipo: 'warning', texto: `No se encontró producto con código o nombre "${termino}"` });
@@ -195,6 +201,7 @@ export const ModuloVentas: React.FC = () => {
   const guardarMovimientoCaja = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!turno || !usuario || !modalCajaMov) return;
+    setErrorMovCaja(null);
     try {
       await api.post(`/turnos/${turno.id}/movimientos`, {
         usuario_id: usuario.id,
@@ -208,12 +215,16 @@ export const ModuloVentas: React.FC = () => {
       setModalCajaMov(null);
       setMensaje({ tipo: 'success', texto: 'Movimiento de efectivo registrado en gaveta.' });
     } catch (err: any) {
-      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'Error al registrar movimiento.' });
+      const msg =
+        err.response?.data?.errors?.monto?.[0] ||
+        err.response?.data?.message ||
+        'Error al registrar movimiento.';
+      setErrorMovCaja(msg);
     }
   };
 
   const sugerenciasBusqueda =
-    busqueda.trim().length > 1
+    busqueda.trim().length > 1 && !busqueda.includes('*')
       ? productos
           .filter(
             (p) =>
@@ -232,16 +243,15 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
-      {/* Barra superior de lectura de código y acciones rápidas estilo eleventa */}
       <div className="row g-2 mb-2 align-items-center">
         <div className="col-md-6 position-relative">
           <form onSubmit={handleScanSubmit} className="input-group input-group-lg">
-            <span className="input-group-text bg-primary text-white fw-bold">Código / Producto</span>
+            <span className="input-group-text bg-primary text-white fw-bold">Código/Nombre</span>
             <input
               ref={inputScanRef}
               type="text"
               className="form-control fw-semibold"
-              placeholder="Escanee código, digite '01'..'99' o busque por nombre y presione Enter..."
+              placeholder="Nombre/Código de Producto"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               autoFocus
@@ -285,16 +295,15 @@ export const ModuloVentas: React.FC = () => {
           <button className="btn btn-outline-info fw-semibold" onClick={abrirTicketsEspera}>
             F6 Recuperar Espera
           </button>
-          <button className="btn btn-outline-success fw-semibold" onClick={() => setModalCajaMov('entrada')}>
+          <button className="btn btn-outline-success fw-semibold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('entrada'); }}>
             F7 Entrada Efectivo
           </button>
-          <button className="btn btn-outline-danger fw-semibold" onClick={() => setModalCajaMov('salida')}>
+          <button className="btn btn-outline-danger fw-semibold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('salida'); }}>
             F8 Salida Efectivo
           </button>
         </div>
       </div>
 
-      {/* Área central: Tabla del Ticket + Panel de Botones Rápidos de Panadería */}
       <div className="row g-3">
         <div className={mostrarRapidos && botonesRapidos.length > 0 ? 'col-lg-8' : 'col-12'}>
           <div className="card shadow-sm border-0" style={{ minHeight: '55vh' }}>
@@ -315,15 +324,13 @@ export const ModuloVentas: React.FC = () => {
                   {carrito.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="text-center text-muted py-5 fs-5">
-                        Pase un producto por el lector o digite su código corto (ej. <strong>01</strong>) para empezar a cobrar.
+                        Pase un producto por el lector, busque por nombre o digite su código corto (ej. <strong>01</strong>).
                       </td>
                     </tr>
                   ) : (
                     carrito.map((item) => (
                       <tr key={item.uid} className="fs-5">
-                        <td>
-                          <span className="badge bg-secondary">{item.codigo_barras}</span>
-                        </td>
+                        <td><span className="badge bg-secondary">{item.codigo_barras}</span></td>
                         <td className="fw-semibold">{item.descripcion_producto}</td>
                         <td className="text-end">₡{item.precio_unitario.toLocaleString()}</td>
                         <td className="text-center">
@@ -371,7 +378,6 @@ export const ModuloVentas: React.FC = () => {
           </div>
         </div>
 
-        {/* Panel lateral de Botones Rápidos de Panadería */}
         {mostrarRapidos && botonesRapidos.length > 0 && (
           <div className="col-lg-4">
             <div className="card shadow-sm border-0 h-100">
@@ -404,7 +410,6 @@ export const ModuloVentas: React.FC = () => {
         )}
       </div>
 
-      {/* Barra inferior de Total Gigante y Botón F12 Cobrar */}
       <div className="card shadow border-0 mt-3 bg-body-tertiary">
         <div className="card-body d-flex flex-wrap justify-content-between align-items-center py-2 px-4">
           <div>
@@ -436,7 +441,6 @@ export const ModuloVentas: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal F12 Cobrar (Simple, Fiado y Pago Mixto) */}
       {modalCobro && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-lg modal-dialog-centered">
@@ -478,21 +482,44 @@ export const ModuloVentas: React.FC = () => {
                 )}
 
                 {metodoPrincipal === 'efectivo' && (
-                  <div className="row g-3 align-items-center bg-body-secondary p-3 rounded">
-                    <div className="col-md-6">
-                      <label className="form-label fw-bold">Paga con (₡):</label>
-                      <input
-                        type="number"
-                        className="form-control form-control-lg fs-3 fw-bold"
-                        value={pagaCon}
-                        onChange={(e) => setPagaCon(e.target.value)}
-                        autoFocus
-                      />
+                  <div className="bg-body-secondary p-3 rounded">
+                    <div className="d-flex flex-wrap gap-2 mb-3">
+                      <span className="small fw-bold text-muted align-self-center me-1">Billetes Rápidos:</span>
+                      {[1000, 2000, 5000, 10000, 20000].map((billete) => (
+                        <button
+                          key={billete}
+                          type="button"
+                          className="btn btn-outline-success fw-bold"
+                          onClick={() => setPagaCon(String(billete))}
+                        >
+                          ₡{billete.toLocaleString()}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary fw-bold"
+                        onClick={() => setPagaCon(String(totalVenta))}
+                      >
+                        Pago Exacto
+                      </button>
                     </div>
-                    <div className="col-md-6 text-end">
-                      <div className="text-muted fw-semibold">Su Vuelto / Cambio:</div>
-                      <div className="display-6 fw-bold text-success">
-                        ₡{Math.max(0, (Number(pagaCon) || 0) - totalVenta).toLocaleString()}
+
+                    <div className="row g-3 align-items-center">
+                      <div className="col-md-6">
+                        <label className="form-label fw-bold">Paga con (₡):</label>
+                        <input
+                          type="number"
+                          className="form-control form-control-lg fs-3 fw-bold"
+                          value={pagaCon}
+                          onChange={(e) => setPagaCon(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      <div className="col-md-6 text-end">
+                        <div className="text-muted fw-semibold">Su Vuelto / Cambio:</div>
+                        <div className="display-6 fw-bold text-success">
+                          ₡{Math.max(0, (Number(pagaCon) || 0) - totalVenta).toLocaleString()}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -532,7 +559,6 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Artículo Común */}
       {modalComun && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">
@@ -572,7 +598,6 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
-      {/* Modal F7 Entrada / F8 Salida de Efectivo */}
       {modalCajaMov && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">
@@ -584,13 +609,14 @@ export const ModuloVentas: React.FC = () => {
                 <button type="button" className="btn-close" onClick={() => setModalCajaMov(null)} />
               </div>
               <div className="modal-body">
+                {errorMovCaja && <div className="alert alert-danger fw-semibold">{errorMovCaja}</div>}
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Monto en Efectivo (₡)</label>
                   <input type="number" min="1" className="form-control form-control-lg" value={movMonto} onChange={(e) => setMovMonto(e.target.value)} autoFocus required />
                 </div>
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Concepto / Motivo</label>
-                  <input type="text" className="form-control" placeholder="Ej: Pago a proveedor de hielo / Cambio de monedas" value={movConcepto} onChange={(e) => setMovConcepto(e.target.value)} required />
+                  <input type="text" className="form-control" placeholder="Ej: Pago a proveedor / Ingreso de monedas" value={movConcepto} onChange={(e) => setMovConcepto(e.target.value)} required />
                 </div>
               </div>
               <div className="modal-footer">
@@ -601,7 +627,6 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
-      {/* Modal F6 Tickets en Espera */}
       {modalEspera && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">

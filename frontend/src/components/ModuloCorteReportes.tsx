@@ -4,18 +4,12 @@ import { api } from '../api/client';
 
 export const ModuloCorteReportes: React.FC = () => {
   const { turno, setTurno, usuario, recargarCatalogos } = usePos();
-  const [subVista, setSubVista] = useState<'corte' | 'ventas_turno' | 'reporte_periodo'>('corte');
+  const [subVista, setSubVista] = useState<'corte' | 'ventas_turno'>('corte');
   const [resumen, setResumen] = useState<any | null>(null);
   const [ventasTurno, setVentasTurno] = useState<any[]>([]);
   const [efectivoContado, setEfectivoContado] = useState('');
   const [observaciones, setObservaciones] = useState('');
   const [mensaje, setMensaje] = useState<string | null>(null);
-
-  // Reporte por rango de fechas
-  const hoy = new Date().toISOString().slice(0, 10);
-  const [desde, setDesde] = useState(hoy);
-  const [hasta, setHasta] = useState(hoy);
-  const [reporteFechas, setReporteFechas] = useState<any | null>(null);
 
   const cargarCorte = async () => {
     if (!turno) return;
@@ -30,11 +24,6 @@ export const ModuloCorteReportes: React.FC = () => {
   useEffect(() => {
     cargarCorte();
   }, [turno]);
-
-  const consultarPeriodo = async () => {
-    const res = await api.get(`/reportes/ventas-periodo?desde=${desde}&hasta=${hasta}`);
-    setReporteFechas(res.data);
-  };
 
   const anularTicket = async (ventaId: number, numeroTicket: number) => {
     const motivo = window.prompt(`Ingrese el motivo obligatorio para ANULAR el Ticket #${numeroTicket}:`);
@@ -71,6 +60,21 @@ export const ModuloCorteReportes: React.FC = () => {
   const esperado = resumen?.gaveta_efectivo?.efectivo_esperado || 0;
   const diferenciaVista = efectivoContado !== '' ? Number(efectivoContado) - esperado : 0;
 
+  const renderBadgePago = (metodo: string) => {
+    switch (metodo) {
+      case 'efectivo':
+        return 'bg-success';
+      case 'sinpe':
+        return 'bg-info text-dark';
+      case 'tarjeta':
+        return 'bg-primary';
+      case 'credito':
+        return 'bg-warning text-dark';
+      default:
+        return 'bg-secondary';
+    }
+  };
+
   return (
     <div className="container-fluid py-3">
       {mensaje && (
@@ -86,7 +90,7 @@ export const ModuloCorteReportes: React.FC = () => {
             className={`btn fw-bold ${subVista === 'corte' ? 'btn-primary' : 'btn-outline-primary'}`}
             onClick={() => setSubVista('corte')}
           >
-            💰 Corte y Arqueo del Turno Actual
+            💰 Corte de Caja, Pagos y Movimientos del Día
           </button>
           <button
             className={`btn fw-bold ${subVista === 'ventas_turno' ? 'btn-primary' : 'btn-outline-primary'}`}
@@ -94,17 +98,6 @@ export const ModuloCorteReportes: React.FC = () => {
           >
             🧾 Historial de Tickets y Anulaciones ({ventasTurno.length})
           </button>
-          {usuario?.rol === 'admin' && (
-            <button
-              className={`btn fw-bold ${subVista === 'reporte_periodo' ? 'btn-primary' : 'btn-outline-primary'}`}
-              onClick={() => {
-                setSubVista('reporte_periodo');
-                consultarPeriodo();
-              }}
-            >
-              📊 Reporte de Ventas y Ganancias por Fechas
-            </button>
-          )}
         </div>
 
         <button className="btn btn-success fw-bold" onClick={descargarExcelCorte}>
@@ -114,11 +107,10 @@ export const ModuloCorteReportes: React.FC = () => {
 
       {subVista === 'corte' && resumen && (
         <div className="row g-3">
-          {/* Columna 1: Dinero en Gaveta */}
           <div className="col-lg-4">
             <div className="card shadow-sm border-0 h-100">
               <div className="card-header bg-dark text-white fw-bold">
-                1. Arqueo de Efectivo en Gaveta
+                1. Arqueo de Efectivo Físico en Gaveta
               </div>
               <div className="card-body">
                 <ul className="list-group list-group-flush mb-3">
@@ -139,7 +131,7 @@ export const ModuloCorteReportes: React.FC = () => {
                     <strong>+ ₡{resumen.gaveta_efectivo.entradas_efectivo.toLocaleString()}</strong>
                   </li>
                   <li className="list-group-item d-flex justify-content-between text-danger">
-                    <span>F8 Salidas / Gastos en Efectivo:</span>
+                    <span>F8 Salidas de Efectivo:</span>
                     <strong>- ₡{resumen.gaveta_efectivo.salidas_efectivo.toLocaleString()}</strong>
                   </li>
                   <li className="list-group-item d-flex justify-content-between text-danger">
@@ -147,7 +139,7 @@ export const ModuloCorteReportes: React.FC = () => {
                     <strong>- ₡{resumen.gaveta_efectivo.prestamos_efectivo.toLocaleString()}</strong>
                   </li>
                   <li className="list-group-item d-flex justify-content-between fs-5 bg-body-secondary">
-                    <span className="fw-bold">Efectivo Esperado:</span>
+                    <span className="fw-bold">Efectivo Esperado en Caja:</span>
                     <strong className="text-primary">₡{esperado.toLocaleString()}</strong>
                   </li>
                 </ul>
@@ -194,72 +186,100 @@ export const ModuloCorteReportes: React.FC = () => {
             </div>
           </div>
 
-          {/* Columna 2: Totales por Método de Pago y Ganancia por Departamento */}
           <div className="col-lg-8">
-            <div className="row g-3 mb-3">
-              <div className="col-md-6">
-                <div className="card shadow-sm border-0 bg-primary text-white">
-                  <div className="card-body">
-                    <div className="small text-uppercase fw-bold opacity-75">Ventas Totales del Turno</div>
-                    <div className="display-6 fw-bold">₡{resumen.ventas_totales.toLocaleString()}</div>
-                  </div>
-                </div>
-              </div>
-              {usuario?.rol === 'admin' && (
-                <div className="col-md-6">
-                  <div className="card shadow-sm border-0 bg-success text-white">
-                    <div className="card-body">
-                      <div className="small text-uppercase fw-bold opacity-75">Ganancia Bruta del Turno</div>
-                      <div className="display-6 fw-bold">₡{resumen.ganancia_bruta_total.toLocaleString()}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
             <div className="card shadow-sm border-0 mb-3">
-              <div className="card-header fw-bold">2. Desglose de Ventas por Método de Pago</div>
-              <div className="card-body row text-center">
-                <div className="col-3 border-end">
-                  <div className="text-muted small">Efectivo</div>
-                  <div className="fs-5 fw-bold">₡{resumen.desglose_pagos.efectivo.toLocaleString()}</div>
-                </div>
-                <div className="col-3 border-end">
-                  <div className="text-muted small">SINPE Móvil</div>
-                  <div className="fs-5 fw-bold text-info">₡{resumen.desglose_pagos.sinpe.toLocaleString()}</div>
-                </div>
-                <div className="col-3 border-end">
-                  <div className="text-muted small">Tarjeta / Datáfono</div>
-                  <div className="fs-5 fw-bold text-primary">₡{resumen.desglose_pagos.tarjeta.toLocaleString()}</div>
-                </div>
-                <div className="col-3">
-                  <div className="text-muted small">Crédito (Fiados)</div>
-                  <div className="fs-5 fw-bold text-danger">₡{resumen.desglose_pagos.credito.toLocaleString()}</div>
+              <div className="card-header bg-primary text-white fw-bold">
+                2. Ventas del Turno por Método de Pago y Total Sumado
+              </div>
+              <div className="card-body">
+                <div className="row g-2 text-center align-items-center">
+                  <div className="col-md-2 col-6 border-end">
+                    <div className="text-muted small fw-semibold">Efectivo</div>
+                    <div className="fs-5 fw-bold text-success">₡{resumen.desglose_pagos.efectivo.toLocaleString()}</div>
+                  </div>
+                  <div className="col-md-2 col-6 border-end">
+                    <div className="text-muted small fw-semibold">SINPE Móvil</div>
+                    <div className="fs-5 fw-bold text-info">₡{resumen.desglose_pagos.sinpe.toLocaleString()}</div>
+                  </div>
+                  <div className="col-md-2 col-6 border-end">
+                    <div className="text-muted small fw-semibold">Tarjeta</div>
+                    <div className="fs-5 fw-bold text-primary">₡{resumen.desglose_pagos.tarjeta.toLocaleString()}</div>
+                  </div>
+                  <div className="col-md-2 col-6 border-end">
+                    <div className="text-muted small fw-semibold">Crédito (Fiados)</div>
+                    <div className="fs-5 fw-bold text-danger">₡{resumen.desglose_pagos.credito.toLocaleString()}</div>
+                  </div>
+                  <div className="col-md-4 col-12 bg-body-tertiary p-2 rounded">
+                    <div className="text-uppercase small fw-bold text-muted">TOTAL VENTAS SUMADO</div>
+                    <div className="fs-3 fw-bold text-primary">₡{resumen.ventas_totales.toLocaleString()}</div>
+                    {usuario?.rol === 'admin' && (
+                      <small className="text-success fw-bold">
+                        Ganancia Bruta: ₡{resumen.ganancia_bruta_total.toLocaleString()}
+                      </small>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
             <div className="card shadow-sm border-0">
-              <div className="card-header fw-bold">3. Ventas por Departamento (Panadería vs. Proveedores)</div>
-              <div className="table-responsive">
-                <table className="table align-middle mb-0">
+              <div className="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span className="fw-bold">3. Movimientos de Caja del Día (Entradas, Salidas, Préstamos y Abonos)</span>
+                <span className="badge bg-secondary">{resumen.movimientos_caja.length} registros</span>
+              </div>
+              <div className="table-responsive" style={{ maxHeight: '48vh', overflowY: 'auto' }}>
+                <table className="table table-hover align-middle mb-0">
                   <thead className="table-light">
                     <tr>
-                      <th>Departamento</th>
-                      <th className="text-end">Total Vendido</th>
-                      {usuario?.rol === 'admin' && <th className="text-end">Costo Mercadería</th>}
-                      {usuario?.rol === 'admin' && <th className="text-end">Ganancia Real</th>}
+                      <th>Hora</th>
+                      <th>Tipo de Movimiento</th>
+                      <th>Método</th>
+                      <th>Cliente / Cajero</th>
+                      <th>Concepto / Motivo</th>
+                      <th className="text-end">Monto</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {resumen.ventas_por_departamento.map((d: any, i: number) => (
-                      <tr key={i}>
-                        <td className="fw-semibold">{d.departamento}</td>
-                        <td className="text-end fw-bold">₡{Number(d.total_ventas).toLocaleString()}</td>
-                        {usuario?.rol === 'admin' && <td className="text-end text-muted">₡{Number(d.costo_total).toLocaleString()}</td>}
-                        {usuario?.rol === 'admin' && <td className="text-end fw-bold text-success">₡{Number(d.ganancia_bruta).toLocaleString()}</td>}
+                    {resumen.movimientos_caja.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center text-muted py-4">
+                          No se han registrado entradas (F7), salidas (F8), préstamos ni abonos en este turno.
+                        </td>
                       </tr>
-                    ))}
+                    ) : (
+                      resumen.movimientos_caja.map((m: any) => {
+                        const esIngreso = m.tipo === 'entrada' || m.tipo === 'abono_cliente';
+                        return (
+                          <tr key={m.id}>
+                            <td className="small">{new Date(m.created_at).toLocaleTimeString()}</td>
+                            <td>
+                              <span
+                                className={`badge ${
+                                  m.tipo === 'entrada'
+                                    ? 'bg-success'
+                                    : m.tipo === 'abono_cliente'
+                                    ? 'bg-info text-dark'
+                                    : m.tipo === 'salida'
+                                    ? 'bg-danger'
+                                    : 'bg-warning text-dark'
+                                }`}
+                              >
+                                {m.tipo === 'entrada' && 'F7 ENTRADA'}
+                                {m.tipo === 'salida' && 'F8 SALIDA'}
+                                {m.tipo === 'abono_cliente' && 'ABONO CLIENTE'}
+                                {m.tipo === 'prestamo_cliente' && 'PRÉSTAMO CLIENTE'}
+                              </span>
+                            </td>
+                            <td className="text-uppercase small fw-semibold">{m.metodo_pago}</td>
+                            <td className="small">{m.cliente?.nombre || m.usuario?.nombre || '-'}</td>
+                            <td>{m.concepto}</td>
+                            <td className={`text-end fw-bold ${esIngreso ? 'text-success' : 'text-danger'}`}>
+                              {esIngreso ? '+' : '-'} ₡{Number(m.monto).toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -268,7 +288,7 @@ export const ModuloCorteReportes: React.FC = () => {
         </div>
       )}
 
-      {/* Historial de Tickets del Turno y Botón de Anulación Auditada */}
+      {/* Historial de Tickets del Turno con Método de Pago Utilizado */}
       {subVista === 'ventas_turno' && (
         <div className="card shadow-sm border-0">
           <div className="card-header fw-bold">Tickets Emitidos en el Turno Actual</div>
@@ -280,6 +300,7 @@ export const ModuloCorteReportes: React.FC = () => {
                   <th>Hora</th>
                   <th>Cliente</th>
                   <th>Artículos</th>
+                  <th>Método de Pago</th>
                   <th>Estado</th>
                   <th className="text-end">Total</th>
                   <th className="text-end">Acción</th>
@@ -295,6 +316,20 @@ export const ModuloCorteReportes: React.FC = () => {
                       {v.detalles.map((d: any) => `${d.cantidad}x ${d.descripcion_producto}`).join(', ')}
                       {v.motivo_anulacion && (
                         <div className="text-danger fw-bold">Motivo anulación: {v.motivo_anulacion}</div>
+                      )}
+                    </td>
+                    <td>
+                      {v.pagos && v.pagos.length > 0 ? (
+                        <div className="d-flex flex-wrap gap-1">
+                          {v.pagos.map((p: any, idx: number) => (
+                            <span key={idx} className={`badge ${renderBadgePago(p.metodo_pago)}`}>
+                              {p.metodo_pago.toUpperCase()}
+                              {v.pagos.length > 1 ? `: ₡${Number(p.monto).toLocaleString()}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="badge bg-secondary">EN ESPERA</span>
                       )}
                     </td>
                     <td>
@@ -318,52 +353,6 @@ export const ModuloCorteReportes: React.FC = () => {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      {/* Reporte Histórico por Fechas */}
-      {subVista === 'reporte_periodo' && (
-        <div className="card shadow-sm border-0 p-3">
-          <div className="row g-2 align-items-end mb-3">
-            <div className="col-auto">
-              <label className="form-label fw-semibold small">Desde</label>
-              <input type="date" className="form-control" value={desde} onChange={(e) => setDesde(e.target.value)} />
-            </div>
-            <div className="col-auto">
-              <label className="form-label fw-semibold small">Hasta</label>
-              <input type="date" className="form-control" value={hasta} onChange={(e) => setHasta(e.target.value)} />
-            </div>
-            <div className="col-auto">
-              <button className="btn btn-primary fw-bold" onClick={consultarPeriodo}>
-                Consultar Período
-              </button>
-            </div>
-          </div>
-
-          {reporteFechas && (
-            <div className="row g-3">
-              <div className="col-md-4">
-                <div className="p-3 border rounded bg-body-tertiary">
-                  <div className="text-muted small">Ventas Totales del Período</div>
-                  <div className="fs-3 fw-bold text-primary">₡{reporteFechas.ventas_totales.toLocaleString()}</div>
-                </div>
-              </div>
-              <div className="col-md-4">
-                <div className="p-3 border rounded bg-body-tertiary">
-                  <div className="text-muted small">Ganancia Neta Estimada</div>
-                  <div className="fs-3 fw-bold text-success">₡{reporteFechas.ganancia_total.toLocaleString()}</div>
-                </div>
-              </div>
-              <div className="col-md-4">
-                <div className="p-3 border rounded bg-body-tertiary">
-                  <div className="text-muted small">Tickets Cobrados / Promedio</div>
-                  <div className="fs-4 fw-bold">
-                    {reporteFechas.numero_ventas} tickets (Prom: ₡{reporteFechas.venta_promedio.toLocaleString()})
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

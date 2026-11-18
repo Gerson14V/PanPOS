@@ -4,17 +4,16 @@ import { LoginTurnoModal } from './components/LoginTurnoModal';
 import { ModuloVentas } from './components/ModuloVentas';
 import { ModuloClientes } from './components/ModuloClientes';
 import { ModuloProductosInventario } from './components/ModuloProductosInventario';
+import { ModuloProveedores } from './components/ModuloProveedores';
 import { ModuloCorteReportes } from './components/ModuloCorteReportes';
 import { ModuloConfiguracion } from './components/ModuloConfiguracion';
 
 const MainLayout: React.FC = () => {
   const { usuario, setUsuario, configuracion, tema, alternarTema } = usePos();
-  const [moduloActivo, setModuloActivo] = useState<'ventas' | 'clientes' | 'productos' | 'inventario' | 'corte' | 'config'>('ventas');
+  const [moduloActivo, setModuloActivo] = useState<'ventas' | 'clientes' | 'productos_inventario' | 'proveedores' | 'corte' | 'config'>('ventas');
 
   const clientesVisible = (configuracion['modulo_clientes_activo'] ?? '1') === '1';
-  const inventarioVisible = (configuracion['modulo_inventario_activo'] ?? '1') === '1';
 
-  // Atajos globales de navegación F1, F2, F3, F4
   useEffect(() => {
     const handleNavKeys = (e: KeyboardEvent) => {
       if (e.key === 'F1') {
@@ -25,21 +24,20 @@ const MainLayout: React.FC = () => {
         setModuloActivo('clientes');
       } else if (e.key === 'F3') {
         e.preventDefault();
-        setModuloActivo('productos');
-      } else if (e.key === 'F4' && inventarioVisible) {
+        setModuloActivo('productos_inventario');
+      } else if (e.key === 'F4') {
         e.preventDefault();
-        setModuloActivo('inventario');
+        setModuloActivo('proveedores');
       }
     };
     window.addEventListener('keydown', handleNavKeys);
     return () => window.removeEventListener('keydown', handleNavKeys);
-  }, [clientesVisible, inventarioVisible]);
+  }, [clientesVisible]);
 
   return (
     <div className="min-vh-100 bg-body">
       <LoginTurnoModal />
 
-      {/* Barra superior institucional inspirada en eleventa */}
       <nav className="navbar navbar-expand-lg bg-primary navbar-dark shadow-sm px-3 py-2">
         <div className="container-fluid px-0">
           <span className="navbar-brand fw-bold fs-4 me-4">
@@ -64,20 +62,18 @@ const MainLayout: React.FC = () => {
             )}
 
             <button
-              className={`btn fw-bold ${moduloActivo === 'productos' ? 'btn-light text-primary' : 'btn-outline-light'}`}
-              onClick={() => setModuloActivo('productos')}
+              className={`btn fw-bold ${moduloActivo === 'productos_inventario' ? 'btn-light text-primary' : 'btn-outline-light'}`}
+              onClick={() => setModuloActivo('productos_inventario')}
             >
-              F3 Productos
+              F3 Productos/Inventario
             </button>
 
-            {inventarioVisible && (
-              <button
-                className={`btn fw-bold ${moduloActivo === 'inventario' ? 'btn-light text-primary' : 'btn-outline-light'}`}
-                onClick={() => setModuloActivo('inventario')}
-              >
-                F4 Inventario
-              </button>
-            )}
+            <button
+              className={`btn fw-bold ${moduloActivo === 'proveedores' ? 'btn-light text-primary' : 'btn-outline-light'}`}
+              onClick={() => setModuloActivo('proveedores')}
+            >
+              F4 Proveedores
+            </button>
 
             <button
               className={`btn fw-bold ${moduloActivo === 'corte' ? 'btn-warning text-dark' : 'btn-outline-warning'}`}
@@ -97,8 +93,8 @@ const MainLayout: React.FC = () => {
           </div>
 
           <div className="d-flex align-items-center gap-2 text-white">
-            <button className="btn btn-sm btn-outline-light" onClick={alternarTema} title="Cambiar Modo Claro / Oscuro">
-              {tema === 'light' ? '🌙 Modo Oscuro' : '☀️ Modo Claro'}
+            <button className="btn btn-sm btn-outline-light" onClick={alternarTema}>
+              {tema === 'light' ? '🌙 Oscuro' : '☀️ Claro'}
             </button>
             {usuario && (
               <>
@@ -117,12 +113,11 @@ const MainLayout: React.FC = () => {
         </div>
       </nav>
 
-      {/* Renderizado del módulo activo */}
       <main>
         {moduloActivo === 'ventas' && <ModuloVentas />}
         {moduloActivo === 'clientes' && <ModuloClientes />}
-        {moduloActivo === 'productos' && <ModuloProductosInventario vistaInicial="productos" />}
-        {moduloActivo === 'inventario' && <ModuloProductosInventario vistaInicial="inventario" />}
+        {moduloActivo === 'productos_inventario' && <ModuloProductosInventario />}
+        {moduloActivo === 'proveedores' && <ModuloProveedores />}
         {moduloActivo === 'corte' && <ModuloCorteReportes />}
         {moduloActivo === 'config' && <ModuloConfiguracion />}
       </main>

@@ -19,10 +19,9 @@ class ReporteBackupController extends Controller
         private BackupService $backupService
     ) {}
 
-    // Reporte gráfico y numérico de ventas/ganancias por rango de fechas (Módulo Reportes)
     public function ventasPorPeriodo(Request $request): JsonResponse
     {
-        $desde = $request->date('desde') ? $request->date('desde')->startOfDay() : now()->startOfWeek();
+        $desde = $request->date('desde') ? $request->date('desde')->startOfDay() : now()->startOfDay();
         $hasta = $request->date('hasta') ? $request->date('hasta')->endOfDay() : now()->endOfDay();
 
         $ventasIds = Venta::where('estado', 'completada')
@@ -38,10 +37,13 @@ class ReporteBackupController extends Controller
             ->whereIn('detalle_ventas.venta_id', $ventasIds)
             ->selectRaw("
                 COALESCE(departamentos.nombre, 'Artículo Común') as departamento,
+                SUM(detalle_ventas.cantidad) as unidades_vendidas,
                 SUM(detalle_ventas.subtotal) as total_ventas,
+                SUM(detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico) as costo_total,
                 SUM(detalle_ventas.subtotal - (detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico)) as ganancia
             ")
             ->groupBy('departamento')
+            ->orderByDesc('total_ventas')
             ->get();
 
         $ventasPorDia = DB::table('ventas')
@@ -63,7 +65,6 @@ class ReporteBackupController extends Controller
         ]);
     }
 
-    // Exporta el corte de caja en formato compatible con Excel (CSV con BOM UTF-8 para abrir directo en Excel)
     public function exportarCorteExcel(TurnoCaja $turno): StreamedResponse
     {
         $resumen = $this->turnoCajaService->obtenerResumenTurno($turno);
@@ -71,7 +72,6 @@ class ReporteBackupController extends Controller
 
         return response()->streamDownload(function () use ($resumen) {
             $out = fopen('php://output', 'w');
-            // BOM UTF-8 para que Microsoft Excel reconozca tildes y símbolo ₡ automáticamente
             fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
             fputcsv($out, ['REPORTE DE CIERRE DE CAJA - PANPOS']);
@@ -79,38 +79,39 @@ class ReporteBackupController extends Controller
             fputcsv($out, ['Apertura', $resumen['turno']->fecha_apertura, 'Cierre', $resumen['turno']->fecha_cierre ?? 'En curso']);
             fputcsv($out, []);
 
-            fputcsv($out, ['RESUMEN GENERAL']);
-            fputcsv($out, ['Ventas Totales', $resumen['ventas_totales']]);
-            fputcsv($out, ['Ganancia Bruta Total', $resumen['ganancia_bruta_total']]);
-            fputcsv($out, []);
-
-            fputcsv($out, ['DESGLOSE POR MÉTODO DE PAGO']);
+            fputcsv($out, ['VENTAS POR MÉTODO DE PAGO Y TOTAL']);
             fputcsv($out, ['Efectivo', $resumen['desglose_pagos']['efectivo']]);
-            fputcsv($out, ['Tarjeta', $resumen['desglose_pagos']['tarjeta']]);
             fputcsv($out, ['SINPE Móvil', $resumen['desglose_pagos']['sinpe']]);
+            fputcsv($out, ['Tarjeta', $resumen['desglose_pagos']['tarjeta']]);
             fputcsv($out, ['Crédito (Fiado)', $resumen['desglose_pagos']['credito']]);
+            fputcsv($out, ['TOTAL DE VENTAS SUMADO', $resumen['ventas_totales']]);
+            fputcsv($out, ['GANANCIA BRUTA TOTAL', $resumen['ganancia_bruta_total']]);
             fputcsv($out, []);
 
             fputcsv($out, ['ARQUEO DE GAVETA (EFECTIVO)']);
             fputcsv($out, ['Fondo Inicial', $resumen['gaveta_efectivo']['monto_inicial']]);
             fputcsv($out, ['+ Ventas en Efectivo', $resumen['gaveta_efectivo']['ventas_efectivo']]);
             fputcsv($out, ['+ Abonos en Efectivo', $resumen['gaveta_efectivo']['abonos_efectivo']]);
-            fputcsv($out, ['+ Entradas de Caja', $resumen['gaveta_efectivo']['entradas_efectivo']]);
-            fputcsv($out, ['- Salidas de Caja', $resumen['gaveta_efectivo']['salidas_efectivo']]);
+            fputcsv($out, ['+ Entradas de Caja (F7)', $resumen['gaveta_efectivo']['entradas_efectivo']]);
+            fputcsv($out, ['- Salidas de Caja (F8)', $resumen['gaveta_efectivo']['salidas_efectivo']]);
             fputcsv($out, ['- Préstamos a Clientes', $resumen['gaveta_efectivo']['prestamos_efectivo']]);
-            fputcsv($out, ['= Efectivo Esperado', $resumen['gaveta_efectivo']['efectivo_esperado']]);
+            fputcsv($out, ['= Efectivo Esperado en Caja', $resumen['gaveta_efectivo']['efectivo_esperado']]);
             fputcsv($out, ['Efectivo Contado Físico', $resumen['turno']->total_efectivo_contado ?? 'Pendiente']);
             fputcsv($out, ['Diferencia (Sobrante/Faltante)', $resumen['turno']->diferencia_arqueo ?? 0]);
             fputcsv($out, []);
 
-            fputcsv($out, ['VENTAS Y GANANCIA POR DEPARTAMENTO']);
-            fputcsv($out, ['Departamento', 'Total Ventas', 'Costo Total', 'Ganancia Bruta']);
-            foreach ($resumen['ventas_por_departamento'] as $dep) {
-                fputcsv($out, [$dep->departamento, $dep->total_ventas, $dep->costo_total, $dep->ganancia_bruta]);
+            fputcsv($out, ['MOVIMIENTOS DE CAJA DEL DÍA (ENTRADAS, SALIDAS, PRÉSTAMOS Y ABONOS)']);
+            fputcsv($out, ['Hora', 'Tipo', 'Método', 'Cliente', 'Concepto', 'Monto']);
+            foreach ($resumen['movimientos_caja'] as $m) {
+                fputcsv($out, [
+                    $m->created_at,
+                    strtoupper($m->tipo),
+                    strtoupper($m->metodo_pago),
+                    $m->cliente->nombre ?? '-',
+                    $m->concepto,
+                    $m->monto,
+                ]);
             }
-            fputcsv($out, []);
-
-            fputcsv($out, ['AUDITORÍA DE ANULACIONES', 'Cantidad:', $resumen['anulaciones']['cantidad'], 'Monto Total:', $resumen['anulaciones']['monto_total_anulado']]);
             fclose($out);
         }, $nombreArchivo, [
             'Content-Type' => 'text/csv; charset=UTF-8',
