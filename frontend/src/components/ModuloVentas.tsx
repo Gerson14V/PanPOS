@@ -243,9 +243,10 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
+      {/* Barra de búsqueda y botones de operación estilo Panadería Artesanal */}
       <div className="row g-2 mb-2 align-items-center">
         <div className="col-md-6 position-relative">
-          <form onSubmit={handleScanSubmit} className="input-group input-group-lg">
+          <form onSubmit={handleScanSubmit} className="input-group input-group-lg shadow-sm">
             <span className="input-group-text bg-primary text-white fw-bold">Código/Nombre</span>
             <input
               ref={inputScanRef}
@@ -256,7 +257,7 @@ export const ModuloVentas: React.FC = () => {
               onChange={(e) => setBusqueda(e.target.value)}
               autoFocus
             />
-            <button className="btn btn-primary fw-bold" type="submit">
+            <button className="btn btn-primary fw-bold px-4" type="submit">
               ENTER Agregar
             </button>
           </form>
@@ -286,27 +287,28 @@ export const ModuloVentas: React.FC = () => {
         </div>
 
         <div className="col-md-6 d-flex flex-wrap gap-2 justify-content-md-end">
-          <button className="btn btn-outline-primary fw-semibold" onClick={() => setModalComun(true)}>
+          <button className="btn btn-accion-artesanal" onClick={() => setModalComun(true)}>
             + Artículo Común
           </button>
-          <button className="btn btn-outline-warning fw-semibold" onClick={() => confirmarVenta('en_espera')} disabled={carrito.length === 0}>
+          <button className="btn btn-accion-artesanal" onClick={() => confirmarVenta('en_espera')} disabled={carrito.length === 0}>
             ⏸ Poner en Espera
           </button>
-          <button className="btn btn-outline-info fw-semibold" onClick={abrirTicketsEspera}>
+          <button className="btn btn-accion-artesanal" onClick={abrirTicketsEspera}>
             F6 Recuperar Espera
           </button>
-          <button className="btn btn-outline-success fw-semibold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('entrada'); }}>
+          <button className="btn btn-outline-success fw-bold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('entrada'); }}>
             F7 Entrada Efectivo
           </button>
-          <button className="btn btn-outline-danger fw-semibold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('salida'); }}>
+          <button className="btn btn-outline-danger fw-bold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('salida'); }}>
             F8 Salida Efectivo
           </button>
         </div>
       </div>
 
+      {/* Área Principal: Tabla de Venta + Cuadrícula Dorada de Botones Rápidos */}
       <div className="row g-3">
         <div className={mostrarRapidos && botonesRapidos.length > 0 ? 'col-lg-8' : 'col-12'}>
-          <div className="card shadow-sm border-0" style={{ minHeight: '55vh' }}>
+          <div className="card shadow-sm" style={{ minHeight: '58vh' }}>
             <div className="table-responsive">
               <table className="table table-hover align-middle mb-0">
                 <thead className="table-dark">
@@ -323,8 +325,11 @@ export const ModuloVentas: React.FC = () => {
                 <tbody>
                   {carrito.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center text-muted py-5 fs-5">
-                        Pase un producto por el lector, busque por nombre o digite su código corto (ej. <strong>01</strong>).
+                      <td colSpan={7} className="text-center text-muted py-5">
+                        <div className="display-3 mb-2 opacity-50">🧺🥖</div>
+                        <div className="fs-5 fw-semibold">
+                          Pase un producto por el lector, busque por nombre o toque un botón rápido de panadería.
+                        </div>
                       </td>
                     </tr>
                   ) : (
@@ -356,7 +361,7 @@ export const ModuloVentas: React.FC = () => {
                             </button>
                           </div>
                         </td>
-                        <td className="text-end fw-bold text-primary">₡{item.subtotal.toLocaleString()}</td>
+                        <td className="text-end fw-bold text-success">₡{item.subtotal.toLocaleString()}</td>
                         <td className="text-center">
                           {item.controlar_stock ? (
                             <span className="badge bg-info text-dark">{item.stock_actual}</span>
@@ -380,26 +385,24 @@ export const ModuloVentas: React.FC = () => {
 
         {mostrarRapidos && botonesRapidos.length > 0 && (
           <div className="col-lg-4">
-            <div className="card shadow-sm border-0 h-100">
-              <div className="card-header bg-warning-subtle fw-bold">
-                🥖 Botones Rápidos de Panadería
+            <div className="card shadow-sm h-100">
+              <div className="card-header bg-primary text-white fw-bold d-flex align-items-center justify-content-between">
+                <span>🥖 Botones Rápidos de Panadería</span>
+                <span className="badge bg-warning text-dark">{botonesRapidos.length} rápidos</span>
               </div>
-              <div className="card-body p-2">
+              <div className="card-body p-3">
                 <div className="row g-2">
                   {botonesRapidos.map((p) => (
-                    <div className="col-6" key={p.id}>
+                    <div className="col-6 col-xl-4" key={p.id}>
                       <button
-                        className="btn btn-outline-primary w-100 h-100 py-3 text-start d-flex flex-column justify-content-between shadow-sm"
+                        className="btn btn-pan-rapido w-100 h-100 p-3 text-center d-flex align-items-center justify-content-center"
+                        style={{ minHeight: "85px" }}
                         onClick={() => {
                           agregarAlCarrito(p, 1);
                           inputScanRef.current?.focus();
                         }}
                       >
-                        <div className="d-flex justify-content-between w-100 mb-1">
-                          <span className="badge bg-primary">{p.codigo_barras}</span>
-                          <span className="fw-bold text-success">₡{Number(p.precio_venta).toLocaleString()}</span>
-                        </div>
-                        <div className="fw-semibold text-truncate w-100">{p.nombre}</div>
+                        <span className="fw-bold fs-6 lh-sm text-wrap">{p.nombre}</span>
                       </button>
                     </div>
                   ))}
@@ -410,37 +413,45 @@ export const ModuloVentas: React.FC = () => {
         )}
       </div>
 
-      <div className="card shadow border-0 mt-3 bg-body-tertiary">
-        <div className="card-body d-flex flex-wrap justify-content-between align-items-center py-2 px-4">
-          <div>
-            <span className="text-muted me-3">
-              Artículos en la venta: <strong className="fs-4 text-body">{carrito.reduce((a, b) => a + b.cantidad, 0)}</strong>
-            </span>
-            {carrito.length > 0 && (
-              <button className="btn btn-sm btn-outline-danger" onClick={limpiarCarrito}>
-                Vaciar Ticket
-              </button>
-            )}
-          </div>
+      {/* Barra Inferior estilo Artesanal con Total y Botón Verde de Cobro */}
+      <div className="row g-3 mt-1 align-items-stretch">
+        <div className="col-lg-8">
+          <div className="card shadow-sm h-100 justify-content-center px-4 py-2">
+            <div className="d-flex flex-wrap justify-content-between align-items-center">
+              <div className="d-flex align-items-center gap-3">
+                <div>
+                  <div className="small text-muted fw-bold text-uppercase">Artículos en la venta</div>
+                  <div className="fs-2 fw-bold">{carrito.reduce((a, b) => a + b.cantidad, 0)}</div>
+                </div>
+                {carrito.length > 0 && (
+                  <button className="btn btn-outline-danger btn-sm fw-bold" onClick={limpiarCarrito}>
+                    🗑 Vaciar Ticket
+                  </button>
+                )}
+              </div>
 
-          <div className="d-flex align-items-center gap-4">
-            <div className="text-end">
-              <div className="small text-muted fw-bold">TOTAL A COBRAR</div>
-              <div className="display-5 fw-bold text-primary mb-0">
-                ₡{totalVenta.toLocaleString('es-CR', { minimumFractionDigits: 2 })}
+              <div className="text-end">
+                <div className="small text-muted fw-bold text-uppercase">Total a Cobrar</div>
+                <div className="display-5 fw-bolder text-body mb-0">
+                  ₡{totalVenta.toLocaleString('es-CR', { minimumFractionDigits: 2 })}
+                </div>
               </div>
             </div>
-            <button
-              className="btn btn-success btn-lg px-5 py-3 fs-4 fw-bold shadow"
-              disabled={carrito.length === 0}
-              onClick={abrirModalCobro}
-            >
-              F12 - Cobrar
-            </button>
           </div>
+        </div>
+
+        <div className="col-lg-4">
+          <button
+            className="btn btn-success w-100 h-100 py-3 fs-3 fw-bold shadow d-flex align-items-center justify-content-center gap-2"
+            disabled={carrito.length === 0}
+            onClick={abrirModalCobro}
+          >
+            <span>🛒 F12 - Cobrar</span>
+          </button>
         </div>
       </div>
 
+      {/* Modal F12 Cobrar */}
       {modalCobro && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-lg modal-dialog-centered">
@@ -559,6 +570,7 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
+      {/* Modal Artículo Común */}
       {modalComun && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">
@@ -598,6 +610,7 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
+      {/* Modal F7 Entrada / F8 Salida */}
       {modalCajaMov && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">
@@ -627,6 +640,7 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
+      {/* Modal F6 Tickets en Espera */}
       {modalEspera && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">

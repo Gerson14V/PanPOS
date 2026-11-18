@@ -101,7 +101,7 @@ export const ModuloCorteReportes: React.FC = () => {
         </div>
 
         <button className="btn btn-success fw-bold" onClick={descargarExcelCorte}>
-          📥 Exportar Corte a Excel (.CSV)
+          📥 Exportar Corte a Excel (.XLS)
         </button>
       </div>
 

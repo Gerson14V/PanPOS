@@ -24,18 +24,21 @@ interface PosContextType {
 
 const PosContext = createContext<PosContextType | undefined>(undefined);
 
+// El carrito vive en localStorage (disco duro) para sobrevivir apagones eléctricos repentinos
 const STORAGE_CARRITO_KEY = 'panpos_carrito_respaldo';
-const STORAGE_USUARIO_KEY = 'panpos_usuario_activo';
 
 export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [usuario, setUsuarioState] = useState<Usuario | null>(() => {
-    const guardado = localStorage.getItem(STORAGE_USUARIO_KEY);
-    return guardado ? JSON.parse(guardado) : null;
-  });
+  // Usuario inicia en null cada vez que se abre la aplicación para exigir credenciales siempre
+  const [usuario, setUsuarioState] = useState<Usuario | null>(null);
 
+  // Si hubo un apagón a mitad de una cuenta, el carrito se recupera intacto del disco
   const [carrito, setCarrito] = useState<ItemCarrito[]>(() => {
-    const guardado = localStorage.getItem(STORAGE_CARRITO_KEY);
-    return guardado ? JSON.parse(guardado) : [];
+    try {
+      const guardado = localStorage.getItem(STORAGE_CARRITO_KEY);
+      return guardado ? JSON.parse(guardado) : [];
+    } catch {
+      return [];
+    }
   });
 
   const [turno, setTurno] = useState<TurnoCaja | null>(null);
@@ -43,7 +46,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [configuracion, setConfiguracion] = useState<Record<string, string>>({});
-  const [tema, setTema] = useState<'light' | 'dark'>(usuario?.tema_preferido || 'light');
+  const [tema, setTema] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
     localStorage.setItem(STORAGE_CARRITO_KEY, JSON.stringify(carrito));
@@ -56,10 +59,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setUsuario = (u: Usuario | null) => {
     setUsuarioState(u);
     if (u) {
-      localStorage.setItem(STORAGE_USUARIO_KEY, JSON.stringify(u));
       setTema(u.tema_preferido || 'light');
-    } else {
-      localStorage.removeItem(STORAGE_USUARIO_KEY);
     }
   };
 
@@ -69,7 +69,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (usuario) {
       try {
         const res = await api.put(`/usuarios/${usuario.id}`, { tema_preferido: nuevoTema });
-        setUsuario(res.data);
+        setUsuarioState(res.data);
       } catch (e) {
         console.error(e);
       }
@@ -89,11 +89,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDepartamentos(depRes.data);
       setClientes(cliRes.data);
       setConfiguracion(confRes.data);
+      // Si había un turno abierto en SQLite (ej. tras apagón), se carga automáticamente
       setTurno(turnoRes.data.turno_activo);
-
-      if (turnoRes.data.turno_activo && !usuario) {
-        setUsuario(turnoRes.data.turno_activo.usuario);
-      }
     } catch (error) {
       console.error('Error cargando datos iniciales de PanPOS:', error);
     }

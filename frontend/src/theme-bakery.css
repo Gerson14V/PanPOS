@@ -1,0 +1,218 @@
+:root,
+[data-bs-theme="light"] {
+  --bakery-cream-bg: #f6f3ec;
+  --bakery-card-bg: #ffffff;
+  --bakery-espresso: #4e3629;
+  --bakery-espresso-light: #694b3a;
+  --bakery-soft-cream: #fbf7f0;
+  --bakery-soft-cream-hover: #f2eadc;
+  --bakery-soft-border: #dfd3c3;
+  --bakery-green: #4d9b60;
+  --bakery-green-hover: #3f8450;
+  --bakery-text: #36261c;
+
+  --bs-body-bg: var(--bakery-cream-bg);
+  --bs-body-color: var(--bakery-text);
+  --bs-primary: #5c4033;
+  --bs-primary-rgb: 92, 64, 51;
+  --bs-success: #4d9b60;
+  --bs-success-rgb: 77, 155, 96;
+  --bs-border-color: var(--bakery-soft-border);
+}
+
+[data-bs-theme="dark"] {
+  --bakery-cream-bg: #1e1815;
+  --bakery-card-bg: #28201c;
+  --bakery-espresso: #16110e;
+  --bakery-espresso-light: #382b24;
+  --bakery-soft-cream: #332923;
+  --bakery-soft-cream-hover: #42352d;
+  --bakery-soft-border: #4a3c33;
+  --bakery-green: #3e824f;
+  --bakery-text: #efe8e0;
+
+  --bs-body-bg: var(--bakery-cream-bg);
+  --bs-body-color: var(--bakery-text);
+}
+
+body {
+  background-color: var(--bakery-cream-bg) !important;
+  color: var(--bakery-text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Suavizado general de todos los botones del sistema */
+.btn {
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease !important;
+}
+
+/* Barra Superior Suave */
+.navbar.bg-primary {
+  background-color: var(--bakery-espresso) !important;
+  border-bottom: 2px solid var(--bakery-soft-border);
+  padding-bottom: 0 !important;
+}
+
+.navbar .btn {
+  border-radius: 8px 8px 0 0 !important;
+  border-bottom: none !important;
+  padding: 0.5rem 1rem !important;
+  margin-bottom: -2px;
+}
+
+.navbar .btn-light.text-primary {
+  background-color: var(--bakery-cream-bg) !important;
+  color: var(--bakery-espresso) !important;
+  border: 1px solid var(--bakery-soft-border) !important;
+  border-bottom: none !important;
+  font-weight: 700 !important;
+}
+
+.navbar .btn-outline-light {
+  color: #efe6dc !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.navbar .btn-outline-light:hover {
+  background-color: var(--bakery-espresso-light) !important;
+  color: #ffffff !important;
+}
+
+/* Tarjetas y contenedores con bordes suaves de 1px */
+.card {
+  background-color: var(--bakery-card-bg) !important;
+  border: 1px solid var(--bakery-soft-border) !important;
+  border-radius: 10px !important;
+}
+
+.card-header {
+  border-bottom: 1px solid var(--bakery-soft-border) !important;
+  border-radius: 9px 9px 0 0 !important;
+}
+
+.card-header.bg-primary,
+.card-header.bg-dark,
+.modal-header.bg-primary {
+  background-color: var(--bakery-espresso) !important;
+  color: #fbf7f0 !important;
+}
+
+.table-dark {
+  --bs-table-bg: #5c4033 !important;
+  --bs-table-border-color: #6e5041 !important;
+  color: #fbf7f0 !important;
+}
+
+/* Barra de Escaneo */
+.input-group-text.bg-primary {
+  background-color: var(--bakery-espresso) !important;
+  border-color: var(--bakery-espresso) !important;
+  color: #fbf7f0 !important;
+}
+
+.btn-primary {
+  background-color: var(--bakery-espresso) !important;
+  border-color: var(--bakery-espresso) !important;
+  color: #ffffff !important;
+}
+
+.btn-primary:hover {
+  background-color: var(--bakery-espresso-light) !important;
+  border-color: var(--bakery-espresso-light) !important;
+}
+
+/* Botones de Acción Superiores en Crema Suave */
+.btn-accion-artesanal {
+  background-color: var(--bakery-soft-cream) !important;
+  border: 1px solid #d5c5b0 !important;
+  color: var(--bakery-text) !important;
+}
+
+.btn-accion-artesanal:hover {
+  background-color: var(--bakery-soft-cream-hover) !important;
+  border-color: #bfa98e !important;
+}
+
+/* Botones Rápidos de Productos en Color Crema Suave (Sin amarillo ni iconos) */
+.btn-pan-rapido {
+  background-color: var(--bakery-soft-cream) !important;
+  border: 1px solid #d8c8b4 !important;
+  border-radius: 10px !important;
+  color: var(--bakery-text) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
+}
+
+.btn-pan-rapido:hover {
+  background-color: var(--bakery-soft-cream-hover) !important;
+  border-color: #bca58a !important;
+  transform: translateY(-1px);
+}
+
+.btn-pan-rapido:active {
+  transform: translateY(1px);
+}
+
+/* Botones de éxito / F12 Cobrar suavizados */
+.btn-success {
+  background-color: var(--bakery-green) !important;
+  border: 1px solid #3d804d !important;
+}
+
+.btn-success:hover {
+  background-color: var(--bakery-green-hover) !important;
+}
+
+.btn-outline-success {
+  color: #3d804d !important;
+  border-color: #9ec5a7 !important;
+  background-color: #f3faf5 !important;
+}
+
+.btn-outline-danger {
+  color: #b84a4a !important;
+  border-color: #e0b4b4 !important;
+  background-color: #fdf5f5 !important;
+}
+
+/* Tarjetas de iconos de Configuración adaptables a Modo Claro y Modo Oscuro */
+.btn-config-tile {
+  background-color: var(--bakery-soft-cream) !important;
+  border: 1px solid var(--bakery-soft-border) !important;
+  color: var(--bakery-text) !important;
+  border-radius: 10px !important;
+}
+
+.btn-config-tile:hover {
+  background-color: var(--bakery-soft-cream-hover) !important;
+  transform: translateY(-2px);
+}
+
+/* Contraste legible para botones en Modo Oscuro */
+[data-bs-theme="dark"] .btn-outline-secondary,
+[data-bs-theme="dark"] .btn-outline-primary {
+  color: #f5ebe1 !important;
+  border-color: #7a6352 !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+[data-bs-theme="dark"] .btn-outline-secondary:hover,
+[data-bs-theme="dark"] .btn-outline-primary:hover {
+  background-color: #4a3a2e !important;
+  color: #ffffff !important;
+}
+
+[data-bs-theme="dark"] .btn-outline-success {
+  color: #8ce09a !important;
+  border-color: #3d804d !important;
+  background-color: rgba(61, 128, 77, 0.15) !important;
+}
+
+[data-bs-theme="dark"] .btn-outline-danger {
+  color: #f59898 !important;
+  border-color: #a34646 !important;
+  background-color: rgba(163, 70, 70, 0.15) !important;
+}

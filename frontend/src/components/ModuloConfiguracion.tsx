@@ -110,11 +110,11 @@ export const ModuloConfiguracion: React.FC = () => {
         setMensaje(null);
         setSeccionActiva(id);
       }}
-      className="btn btn-light border shadow-sm d-flex flex-column align-items-center justify-content-center p-3 text-center"
+      className="btn btn-config-tile shadow-sm d-flex flex-column align-items-center justify-content-center p-3 text-center"
       style={{ width: '135px', height: '110px', transition: 'transform 0.12s' }}
     >
       <span className={`fs-2 mb-1 ${color}`}>{icono}</span>
-      <span className="small fw-semibold lh-sm text-body">{titulo}</span>
+      <span className="small fw-semibold lh-sm">{titulo}</span>
     </button>
   );
 
@@ -125,7 +125,7 @@ export const ModuloConfiguracion: React.FC = () => {
         <h5 className="mb-0 fw-bold text-uppercase tracking-wide">CONFIGURACIÓN</h5>
         <button
           type="button"
-          className="btn btn-sm btn-light fw-bold text-primary"
+          className="btn btn-sm btn-warning fw-bold text-dark"
           onClick={() => setSeccionActiva('menu')}
         >
           🏠 Mostrar todas las opciones
