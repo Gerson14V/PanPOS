@@ -14,22 +14,23 @@ Route::post('auth/login', [UsuarioConfigController::class, 'login']);
 Route::get('usuarios', [UsuarioConfigController::class, 'listarUsuarios']);
 Route::post('usuarios', [UsuarioConfigController::class, 'crearUsuario']);
 Route::put('usuarios/{usuario}', [UsuarioConfigController::class, 'actualizarUsuario']);
+Route::delete('usuarios/{usuario}', [UsuarioConfigController::class, 'eliminarUsuario']);
 Route::get('configuracion', [UsuarioConfigController::class, 'obtenerConfiguracion']);
 Route::put('configuracion', [UsuarioConfigController::class, 'actualizarConfiguracion']);
 
 // Departamentos / Proveedores
-Route::apiResource('departamentos', DepartamentoController::class)->only(['index', 'store', 'update']);
+Route::apiResource('departamentos', DepartamentoController::class)->only(['index', 'store', 'update', 'destroy']);
 
 // Productos e Inventario
 Route::get('productos/sugerir-codigo-corto', [ProductoController::class, 'sugerirCodigoCorto']);
 Route::get('inventario/movimientos', [ProductoController::class, 'historialMovimientos']);
 Route::post('productos/{producto}/stock', [ProductoController::class, 'ajustarStock']);
-Route::apiResource('productos', ProductoController::class)->only(['index', 'store', 'update']);
+Route::apiResource('productos', ProductoController::class)->only(['index', 'store', 'update', 'destroy']);
 
 // Clientes, Fiados, Préstamos y Abonos
 Route::get('clientes/{cliente}/estado-cuenta', [ClienteController::class, 'estadoCuenta']);
 Route::post('clientes/{cliente}/operacion-credito', [ClienteController::class, 'registrarOperacionCredito']);
-Route::apiResource('clientes', ClienteController::class)->only(['index', 'store', 'update']);
+Route::apiResource('clientes', ClienteController::class)->only(['index', 'store', 'update', 'destroy']);
 
 // Turnos de Caja y Corte
 Route::get('turnos/activo', [TurnoCajaController::class, 'turnoActivo']);

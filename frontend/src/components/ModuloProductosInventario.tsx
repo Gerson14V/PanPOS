@@ -8,9 +8,8 @@ export const ModuloProductosInventario: React.FC = () => {
   const [busqueda, setBusqueda] = useState('');
   const [filtroProveedor, setFiltroProveedor] = useState<string>('');
   const [soloBajoStock, setSoloBajoStock] = useState(false);
-  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'danger'; texto: string } | null>(null);
 
-  // Formulario Producto
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [codigoBarras, setCodigoBarras] = useState('');
   const [nombre, setNombre] = useState('');
@@ -22,13 +21,11 @@ export const ModuloProductosInventario: React.FC = () => {
   const [stockMinimo, setStockMinimo] = useState('5');
   const [botonRapido, setBotonRapido] = useState(false);
 
-  // Modal Ajuste/Entrada de Inventario
   const [prodAjuste, setProdAjuste] = useState<Producto | null>(null);
   const [tipoMov, setTipoMov] = useState<'entrada' | 'ajuste' | 'merma'>('entrada');
   const [cantMov, setCantMov] = useState('');
   const [motivoMov, setMotivoMov] = useState('');
 
-  // Modal opcional de auditoría (solo si el Admin lo habilita en Configuración)
   const [modalKardex, setModalKardex] = useState(false);
   const [kardex, setKardex] = useState<any[]>([]);
   const kardexHabilitado = (configuracion['habilitar_bitacora_kardex'] ?? '0') === '1';
@@ -68,16 +65,31 @@ export const ModuloProductosInventario: React.FC = () => {
       usuario_id: usuario?.id,
     };
 
-    if (editandoId) {
-      await api.put(`/productos/${editandoId}`, payload);
-      setMensaje('Producto actualizado correctamente.');
-    } else {
-      await api.post('/productos', payload);
-      setMensaje('Producto creado y asociado al proveedor.');
+    try {
+      if (editandoId) {
+        await api.put(`/productos/${editandoId}`, payload);
+        setMensaje({ tipo: 'success', texto: 'Producto actualizado correctamente.' });
+      } else {
+        await api.post('/productos', payload);
+        setMensaje({ tipo: 'success', texto: 'Producto creado y asociado al proveedor.' });
+      }
+      limpiarFormulario();
+      await recargarCatalogos();
+    } catch (err: any) {
+      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'Error al guardar el producto.' });
     }
+  };
 
-    limpiarFormulario();
-    await recargarCatalogos();
+  const eliminarProducto = async (p: Producto) => {
+    if (!window.confirm(`¿Está seguro de que desea eliminar el producto "${p.nombre}"?`)) return;
+    try {
+      await api.delete(`/productos/${p.id}`);
+      if (editandoId === p.id) limpiarFormulario();
+      await recargarCatalogos();
+      setMensaje({ tipo: 'success', texto: `Producto "${p.nombre}" eliminado del catálogo.` });
+    } catch (err: any) {
+      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'No se pudo eliminar el producto.' });
+    }
   };
 
   const cargarParaEditar = (p: Producto) => {
@@ -117,7 +129,7 @@ export const ModuloProductosInventario: React.FC = () => {
     setCantMov('');
     setMotivoMov('');
     await recargarCatalogos();
-    setMensaje('Existencia de inventario actualizada.');
+    setMensaje({ tipo: 'success', texto: 'Existencia de inventario actualizada.' });
   };
 
   const abrirModalKardex = async () => {
@@ -138,13 +150,12 @@ export const ModuloProductosInventario: React.FC = () => {
   return (
     <div className="container-fluid py-3">
       {mensaje && (
-        <div className="alert alert-success alert-dismissible fade show py-2">
-          {mensaje}
+        <div className={`alert alert-${mensaje.tipo} alert-dismissible fade show py-2`}>
+          {mensaje.texto}
           <button type="button" className="btn-close py-2" onClick={() => setMensaje(null)} />
         </div>
       )}
 
-      {/* Barra superior unificada de Productos/Inventario */}
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
         <div>
           <h4 className="fw-bold mb-0">F3 — Productos / Inventario Unificado</h4>
@@ -188,7 +199,6 @@ export const ModuloProductosInventario: React.FC = () => {
       </div>
 
       <div className="row g-3">
-        {/* Formulario Izquierdo: Crear / Editar Producto (Solo permite asociar a Proveedores existentes) */}
         <div className="col-lg-4">
           <div className="card shadow-sm border-0">
             <div className="card-header bg-primary text-white fw-bold">
@@ -301,7 +311,6 @@ export const ModuloProductosInventario: React.FC = () => {
           </div>
         </div>
 
-        {/* Tabla Derecha: Catálogo + Control Directo de Inventario */}
         <div className="col-lg-8">
           <div className="card shadow-sm border-0">
             <div className="table-responsive" style={{ maxHeight: '74vh' }}>
@@ -347,6 +356,9 @@ export const ModuloProductosInventario: React.FC = () => {
                               +/- Stock
                             </button>
                           )}
+                          <button className="btn btn-outline-danger" onClick={() => eliminarProducto(p)}>
+                            Eliminar
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -358,7 +370,6 @@ export const ModuloProductosInventario: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal para Sumar Entrada de Proveedor o Restar Merma */}
       {prodAjuste && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">
@@ -394,7 +405,6 @@ export const ModuloProductosInventario: React.FC = () => {
         </div>
       )}
 
-      {/* Modal opcional de Auditoría si está habilitado en Configuración */}
       {modalKardex && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-xl modal-dialog-centered">

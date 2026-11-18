@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ConfiguracionSistema;
+use App\Models\TurnoCaja;
 use App\Models\Usuario;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -29,7 +31,7 @@ class UsuarioConfigController extends Controller
 
         if (!$usuario->activo) {
             throw ValidationException::withMessages([
-                'credenciales' => 'Esta cuenta de usuario está desactivada.',
+                'credenciales' => 'Esta cuenta de usuario fue eliminada o desactivada.',
             ]);
         }
 
@@ -38,7 +40,7 @@ class UsuarioConfigController extends Controller
 
     public function listarUsuarios(): JsonResponse
     {
-        return response()->json(Usuario::orderBy('nombre')->get());
+        return response()->json(Usuario::where('activo', true)->orderBy('nombre')->get());
     }
 
     public function crearUsuario(Request $request): JsonResponse
@@ -71,7 +73,7 @@ class UsuarioConfigController extends Controller
             $adminsActivos = Usuario::where('rol', 'admin')->where('activo', true)->count();
             if ($adminsActivos <= 1) {
                 throw ValidationException::withMessages([
-                    'rol' => 'No se puede degradar ni desactivar al único Administrador activo del sistema.',
+                    'rol' => 'No se puede degradar ni eliminar al único Administrador activo del sistema.',
                 ]);
             }
         }
@@ -82,6 +84,39 @@ class UsuarioConfigController extends Controller
 
         $usuario->update($datos);
         return response()->json($usuario);
+    }
+
+    public function eliminarUsuario(Usuario $usuario): JsonResponse
+    {
+        if ($usuario->rol === 'admin') {
+            $adminsActivos = Usuario::where('rol', 'admin')->where('activo', true)->count();
+            if ($adminsActivos <= 1) {
+                throw ValidationException::withMessages([
+                    'usuario' => 'No se puede eliminar al único Administrador activo del sistema.',
+                ]);
+            }
+        }
+
+        $tieneTurnoAbierto = TurnoCaja::where('usuario_id', $usuario->id)->where('estado', 'abierto')->exists();
+        if ($tieneTurnoAbierto) {
+            throw ValidationException::withMessages([
+                'usuario' => "No se puede eliminar a {$usuario->nombre} porque tiene el turno de caja abierto actualmente.",
+            ]);
+        }
+
+        $tieneHistorial = DB::table('turnos_caja')->where('usuario_id', $usuario->id)->exists()
+            || DB::table('ventas')->where('usuario_id', $usuario->id)->exists();
+
+        if ($tieneHistorial) {
+            $usuario->update([
+                'activo' => false,
+                'username' => $usuario->username . '_del_' . time(),
+            ]);
+        } else {
+            $usuario->delete();
+        }
+
+        return response()->json(['mensaje' => 'Usuario eliminado correctamente.']);
     }
 
     public function obtenerConfiguracion(): JsonResponse

@@ -8,6 +8,7 @@ use App\Models\Producto;
 use App\Services\InventarioService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProductoController extends Controller
 {
@@ -15,24 +16,20 @@ class ProductoController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = Producto::with('departamento')->orderBy('nombre');
-
-        if ($request->boolean('solo_activos')) {
-            $query->where('activo', true);
-        }
+        $query = Producto::with('departamento')->where('activo', true);
 
         if ($request->boolean('bajo_stock')) {
             $query->where('controlar_stock', true)
                   ->whereColumn('stock_actual', '<=', 'stock_minimo');
         }
 
-        return response()->json($query->get());
+        return response()->json($query->orderBy('nombre')->get());
     }
 
     public function sugerirCodigoCorto(): JsonResponse
     {
         return response()->json([
-            'codigo_sugerido' => Producto::siguienteCodigoCortoDisponible(),
+            'codigo_sugerido' => $this->inventarioService->sugerirCodigoCorto(),
         ]);
     }
 
@@ -56,10 +53,10 @@ class ProductoController extends Controller
 
         $producto = Producto::create($datos);
 
-        if ($producto->controlar_stock && $stockInicial > 0) {
-            $producto = $this->inventarioService->registrarMovimiento(
+        if ($producto->controlar_stock && $stockInicial > 0 && !empty($datos['usuario_id'])) {
+            $this->inventarioService->registrarMovimiento(
                 $producto,
-                $datos['usuario_id'] ?? 1,
+                $datos['usuario_id'],
                 'entrada',
                 $stockInicial,
                 'Inventario inicial al crear producto'
@@ -87,6 +84,25 @@ class ProductoController extends Controller
         return response()->json($producto->load('departamento'));
     }
 
+    public function destroy(Producto $producto): JsonResponse
+    {
+        $tieneVentas = DB::table('detalle_ventas')->where('producto_id', $producto->id)->exists();
+
+        if ($tieneVentas) {
+            // Liberamos el código de barras para que pueda reutilizarse si lo desean y ocultamos del catálogo
+            $producto->update([
+                'activo' => false,
+                'mostrar_boton_rapido' => false,
+                'codigo_barras' => $producto->codigo_barras . '_DEL_' . time(),
+            ]);
+        } else {
+            $producto->movimientosInventario()->delete();
+            $producto->delete();
+        }
+
+        return response()->json(['mensaje' => 'Producto eliminado correctamente.']);
+    }
+
     public function ajustarStock(Request $request, Producto $producto): JsonResponse
     {
         $datos = $request->validate([
@@ -96,7 +112,7 @@ class ProductoController extends Controller
             'motivo' => 'nullable|string|max:255',
         ]);
 
-        $actualizado = $this->inventarioService->registrarMovimiento(
+        $movimiento = $this->inventarioService->registrarMovimiento(
             $producto,
             $datos['usuario_id'],
             $datos['tipo'],
@@ -104,12 +120,15 @@ class ProductoController extends Controller
             $datos['motivo'] ?? null
         );
 
-        return response()->json($actualizado);
+        return response()->json([
+            'producto' => $producto->fresh('departamento'),
+            'movimiento' => $movimiento,
+        ]);
     }
 
     public function historialMovimientos(): JsonResponse
     {
-        $movimientos = MovimientoInventario::with(['producto:id,codigo_barras,nombre', 'usuario:id,nombre'])
+        $movimientos = MovimientoInventario::with(['producto:id,nombre,codigo_barras', 'usuario:id,nombre'])
             ->latest('created_at')
             ->limit(200)
             ->get();

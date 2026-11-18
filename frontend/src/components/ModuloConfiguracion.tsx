@@ -76,6 +76,19 @@ export const ModuloConfiguracion: React.FC = () => {
     }
   };
 
+  
+  const eliminarUsuario = async (u: Usuario) => {
+    if (!window.confirm(`¿Está seguro de eliminar al usuario "${u.nombre}" (${u.username})?`)) return;
+    try {
+      await api.delete(`/usuarios/${u.id}`);
+      await cargarUsuarios();
+      setMensaje({ tipo: "success", texto: `Usuario "${u.nombre}" eliminado correctamente.` });
+    } catch (err: any) {
+      const msg = err.response?.data?.errors?.usuario?.[0] || err.response?.data?.message || "No se pudo eliminar el usuario.";
+      setMensaje({ tipo: "danger", texto: msg });
+    }
+  };
+
   const alternarActivoUsuario = async (u: Usuario) => {
     try {
       await api.put(`/usuarios/${u.id}`, { activo: !u.activo });

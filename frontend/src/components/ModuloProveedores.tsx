@@ -43,6 +43,24 @@ export const ModuloProveedores: React.FC = () => {
     consultarVentasProveedores(inicio, fin);
   };
 
+  
+  const eliminarProveedor = async (dep: Departamento) => {
+    if (!window.confirm(`¿Está seguro de eliminar el proveedor "${dep.nombre}"?`)) return;
+    try {
+      await api.delete(`/departamentos/${dep.id}`);
+      if (editando?.id === dep.id) {
+        setEditando(null);
+        setNombreNuevo("");
+      }
+      await recargarCatalogos();
+      await consultarVentasProveedores();
+      setMensaje({ tipo: "success", texto: `Proveedor "${dep.nombre}" eliminado correctamente.` });
+    } catch (err: any) {
+      const msg = err.response?.data?.errors?.proveedor?.[0] || err.response?.data?.message || "No se pudo eliminar el proveedor.";
+      setMensaje({ tipo: "danger", texto: msg });
+    }
+  };
+
   const guardarProveedor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombreNuevo.trim()) return;
@@ -123,15 +141,23 @@ export const ModuloProveedores: React.FC = () => {
                       <div className="fw-bold">{d.nombre}</div>
                       <small className="text-muted">{cantProductos} productos asociados</small>
                     </div>
-                    <button
-                      className="btn btn-sm btn-outline-primary"
-                      onClick={() => {
-                        setEditando(d);
-                        setNombreNuevo(d.nombre);
-                      }}
-                    >
-                      Renombrar
-                    </button>
+                    <div className="btn-group btn-group-sm">
+                      <button
+                        className="btn btn-outline-primary"
+                        onClick={() => {
+                          setEditando(d);
+                          setNombreNuevo(d.nombre);
+                        }}
+                      >
+                        Renombrar
+                      </button>
+                      <button
+                        className="btn btn-outline-danger"
+                        onClick={() => eliminarProveedor(d)}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
                   </div>
                 );
               })}

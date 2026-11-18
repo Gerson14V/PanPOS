@@ -52,6 +52,38 @@ export const ModuloClientes: React.FC = () => {
     setClienteSeleccionado(res.data.cliente);
   };
 
+  const eliminarCliente = async (cliente: Cliente, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    if (Number(cliente.saldo_deudor) > 0) {
+      setAlerta({
+        tipo: 'danger',
+        texto: `⚠️ No se puede eliminar a "${cliente.nombre}" porque tiene una deuda pendiente de ₡${Number(
+          cliente.saldo_deudor
+        ).toLocaleString()}. Debe saldar su cuenta primero.`,
+      });
+      return;
+    }
+
+    if (!window.confirm(`¿Está seguro de eliminar al cliente "${cliente.nombre}"?`)) return;
+
+    try {
+      await api.delete(`/clientes/${cliente.id}`);
+      if (clienteSeleccionado?.id === cliente.id) {
+        setClienteSeleccionado(null);
+        setDetalleCuenta(null);
+      }
+      await recargarCatalogos();
+      setAlerta({ tipo: 'success', texto: `Cliente "${cliente.nombre}" eliminado correctamente.` });
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.errors?.cliente?.[0] ||
+        err.response?.data?.message ||
+        'No se pudo eliminar el cliente.';
+      setAlerta({ tipo: 'danger', texto: msg });
+    }
+  };
+
   const guardarCliente = async (e: React.FormEvent) => {
     e.preventDefault();
     await api.post('/clientes', { nombre, telefono, notas });
@@ -80,7 +112,6 @@ export const ModuloClientes: React.FC = () => {
     const monto = Number(montoOp);
     const deudaCliente = Number(clienteSeleccionado.saldo_deudor);
 
-    // Validación 1: Abono no puede superar la deuda
     if (modalOperacion === 'abono_cliente') {
       if (deudaCliente <= 0) {
         setErrorModal(`⚠️ ${clienteSeleccionado.nombre} no tiene deuda pendiente (Saldo: ₡0).`);
@@ -94,7 +125,6 @@ export const ModuloClientes: React.FC = () => {
       }
     }
 
-    // Validación 2: Préstamo en efectivo no puede superar el efectivo disponible en caja
     if (modalOperacion === 'prestamo_cliente' && metodoOp === 'efectivo') {
       if (monto > efectivoDisponibleCaja) {
         setErrorModal(
@@ -162,6 +192,7 @@ export const ModuloClientes: React.FC = () => {
       </div>
 
       <div className="row g-3">
+        {/* Lista Izquierda de Clientes con botón directo de Eliminar */}
         <div className="col-lg-5">
           <div className="card shadow-sm border-0">
             <div className="card-header bg-body-tertiary">
@@ -175,9 +206,10 @@ export const ModuloClientes: React.FC = () => {
             </div>
             <div className="list-group list-group-flush" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
               {clientesFiltrados.map((c) => (
-                <button
+                <div
                   key={c.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className={`list-group-item list-group-item-action d-flex justify-content-between align-items-center ${
                     clienteSeleccionado?.id === c.id ? 'active' : ''
                   }`}
@@ -187,15 +219,28 @@ export const ModuloClientes: React.FC = () => {
                     <div className="fw-bold">{c.nombre}</div>
                     {c.telefono && <small className="opacity-75">Tel: {c.telefono}</small>}
                   </div>
-                  <span className={`badge fs-6 ${Number(c.saldo_deudor) > 0 ? 'bg-danger' : 'bg-success'}`}>
-                    ₡{Number(c.saldo_deudor).toLocaleString()}
-                  </span>
-                </button>
+                  <div className="d-flex align-items-center gap-2">
+                    <span className={`badge fs-6 ${Number(c.saldo_deudor) > 0 ? 'bg-danger' : 'bg-success'}`}>
+                      ₡{Number(c.saldo_deudor).toLocaleString()}
+                    </span>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${
+                        clienteSeleccionado?.id === c.id ? 'btn-light text-danger' : 'btn-outline-danger'
+                      } fw-bold`}
+                      title="Eliminar cliente"
+                      onClick={(e) => eliminarCliente(c, e)}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
         </div>
 
+        {/* Panel Derecho de Estado de Cuenta */}
         <div className="col-lg-7">
           {!clienteSeleccionado ? (
             <div className="card shadow-sm border-0 p-5 text-center text-muted">
@@ -203,14 +248,14 @@ export const ModuloClientes: React.FC = () => {
             </div>
           ) : (
             <div className="card shadow-sm border-0">
-              <div className="card-header d-flex flex-wrap justify-content-between align-items-center bg-body-tertiary">
+              <div className="card-header d-flex flex-wrap justify-content-between align-items-center bg-body-tertiary gap-2">
                 <div>
                   <h5 className="fw-bold mb-0">{clienteSeleccionado.nombre}</h5>
                   <span className="text-danger fw-bold">
                     Deuda Actual: ₡{Number(clienteSeleccionado.saldo_deudor).toLocaleString()}
                   </span>
                 </div>
-                <div className="d-flex gap-2">
+                <div className="d-flex flex-wrap gap-2">
                   <button
                     className="btn btn-success fw-bold"
                     disabled={Number(clienteSeleccionado.saldo_deudor) <= 0}
@@ -223,6 +268,12 @@ export const ModuloClientes: React.FC = () => {
                     onClick={() => abrirModalOperacion('prestamo_cliente')}
                   >
                     🤝 Prestar Efectivo de Caja
+                  </button>
+                  <button
+                    className="btn btn-outline-danger fw-bold"
+                    onClick={() => eliminarCliente(clienteSeleccionado)}
+                  >
+                    🗑 Eliminar Cliente
                   </button>
                 </div>
               </div>
@@ -321,7 +372,7 @@ export const ModuloClientes: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Abono o Préstamo con Validación Estricta */}
+      {/* Modal Abono o Préstamo */}
       {modalOperacion && clienteSeleccionado && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-dialog-centered">

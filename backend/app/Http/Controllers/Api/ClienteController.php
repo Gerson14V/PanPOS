@@ -7,6 +7,7 @@ use App\Models\Cliente;
 use App\Services\TurnoCajaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class ClienteController extends Controller
 {
@@ -14,11 +15,7 @@ class ClienteController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = Cliente::orderBy('nombre');
-
-        if ($request->boolean('solo_activos')) {
-            $query->where('activo', true);
-        }
+        $query = Cliente::where('activo', true)->orderBy('nombre');
 
         if ($request->boolean('con_deuda')) {
             $query->where('saldo_deudor', '>', 0);
@@ -50,6 +47,25 @@ class ClienteController extends Controller
 
         $cliente->update($datos);
         return response()->json($cliente);
+    }
+
+    public function destroy(Cliente $cliente): JsonResponse
+    {
+        if ((float) $cliente->saldo_deudor > 0) {
+            throw ValidationException::withMessages([
+                'cliente' => "No se puede eliminar a {$cliente->nombre} porque tiene una deuda pendiente de ₡" . number_format((float) $cliente->saldo_deudor, 2) . ". Debe saldar su cuenta primero.",
+            ]);
+        }
+
+        $tieneHistorial = $cliente->ventas()->exists() || $cliente->movimientosCaja()->exists();
+
+        if ($tieneHistorial) {
+            $cliente->update(['activo' => false]);
+        } else {
+            $cliente->delete();
+        }
+
+        return response()->json(['mensaje' => 'Cliente eliminado correctamente.']);
     }
 
     public function estadoCuenta(Cliente $cliente): JsonResponse
