@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { usePos } from '../context/PosContext';
 import { api } from '../api/client';
 import { PagoItem } from '../types/models';
@@ -49,60 +49,138 @@ export const ModuloVentas: React.FC = () => {
   const mostrarRapidos = (configuracion['panel_botones_rapidos'] ?? '1') === '1';
   const botonesRapidos = productos.filter((p) => p.mostrar_boton_rapido);
 
+  const hayModalAbierto = modalCobro || modalComun || modalCajaMov !== null || modalEspera || !usuario || !turno;
+
+  // Función centralizada para procesar un código escaneado o buscado
+  const procesarTerminoBusqueda = useCallback(
+    (textoCrudo: string) => {
+      let termino = textoCrudo.trim();
+      if (!termino) return;
+
+      let cantidadMultiplicador = 1;
+      if (termino.includes('*')) {
+        const partes = termino.split('*');
+        const cantParseada = parseInt(partes[0], 10);
+        if (!isNaN(cantParseada) && cantParseada > 0 && partes[1]) {
+          cantidadMultiplicador = cantParseada;
+          termino = partes[1].trim();
+        }
+      }
+
+      const codigoNormalizado = termino.length === 1 && /^\d$/.test(termino) ? `0${termino}` : termino;
+      const exacto = productos.find(
+        (p) => p.codigo_barras.toLowerCase() === termino.toLowerCase() || p.codigo_barras === codigoNormalizado
+      );
+
+      if (exacto) {
+        agregarAlCarrito(exacto, cantidadMultiplicador);
+        setBusqueda('');
+        setMensaje(null);
+        return;
+      }
+
+      const porNombre = productos.filter((p) => p.nombre.toLowerCase().includes(termino.toLowerCase()));
+      if (porNombre.length === 1) {
+        agregarAlCarrito(porNombre[0], cantidadMultiplicador);
+        setBusqueda('');
+        setMensaje(null);
+      } else if (porNombre.length === 0) {
+        setMensaje({ tipo: 'warning', texto: `No se encontró producto con código o nombre "${termino}"` });
+        setBusqueda('');
+      }
+    },
+    [productos, agregarAlCarrito]
+  );
+
+  const handleScanSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    procesarTerminoBusqueda(busqueda);
+    inputScanRef.current?.focus();
+  };
+
+  // Devolver el foco al lector automáticamente cuando se cierra cualquier modal
+  useEffect(() => {
+    if (!hayModalAbierto) {
+      inputScanRef.current?.focus();
+    }
+  }, [hayModalAbierto]);
+
+  // Interceptor global en F1 Ventas: captura el lector de código de barras aunque el input no tenga el foco
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F12') {
         e.preventDefault();
-        if (carrito.length > 0) abrirModalCobro();
-      } else if (e.key === 'F6') {
+        if (carrito.length > 0 && !hayModalAbierto) abrirModalCobro();
+        return;
+      }
+      if (e.key === 'F6' && !hayModalAbierto) {
         e.preventDefault();
         abrirTicketsEspera();
-      } else if (e.key === 'F7') {
+        return;
+      }
+      if (e.key === 'F7' && !hayModalAbierto) {
         e.preventDefault();
         setErrorMovCaja(null);
         setModalCajaMov('entrada');
-      } else if (e.key === 'F8') {
+        return;
+      }
+      if (e.key === 'F8' && !hayModalAbierto) {
         e.preventDefault();
         setErrorMovCaja(null);
         setModalCajaMov('salida');
+        return;
+      }
+
+      // Si hay un modal abierto, no interceptamos el teclado
+      if (hayModalAbierto) return;
+
+      const activeEl = document.activeElement as HTMLElement | null;
+      const esInputScan = activeEl === inputScanRef.current;
+      const esOtroInput =
+        activeEl &&
+        !esInputScan &&
+        (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+
+      // Si el cajero está editando manualmente la cantidad en una fila de la tabla, respetamos ese input
+      if (esOtroInput) {
+        if (e.key === 'Enter') {
+          activeEl.blur();
+          inputScanRef.current?.focus();
+        }
+        return;
+      }
+
+      // Si el foco NO está en la barra de búsqueda y el lector dispara caracteres o Enter:
+      if (!esInputScan) {
+        if (e.key === 'Enter') {
+          if (busqueda.trim().length > 0) {
+            e.preventDefault();
+            procesarTerminoBusqueda(busqueda);
+          }
+          inputScanRef.current?.focus();
+        } else if (e.key === 'Backspace') {
+          inputScanRef.current?.focus();
+          setBusqueda((prev) => prev.slice(0, -1));
+        } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+          // Captura el primer dígito o letra del lector al vuelo, enfoca el input y lo escribe sin perderlo
+          e.preventDefault();
+          inputScanRef.current?.focus();
+          setBusqueda((prev) => prev + e.key);
+        }
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [carrito]);
+  }, [carrito, hayModalAbierto, busqueda, procesarTerminoBusqueda]);
 
-  const handleScanSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    let termino = busqueda.trim();
-    if (!termino) return;
-
-    let cantidadMultiplicador = 1;
-    if (termino.includes('*')) {
-      const partes = termino.split('*');
-      const cantParseada = parseInt(partes[0], 10);
-      if (!isNaN(cantParseada) && cantParseada > 0 && partes[1]) {
-        cantidadMultiplicador = cantParseada;
-        termino = partes[1].trim();
-      }
-    }
-
-    const codigoNormalizado = termino.length === 1 && /^\d$/.test(termino) ? `0${termino}` : termino;
-    const exacto = productos.find(
-      (p) => p.codigo_barras.toLowerCase() === termino.toLowerCase() || p.codigo_barras === codigoNormalizado
-    );
-
-    if (exacto) {
-      agregarAlCarrito(exacto, cantidadMultiplicador);
-      setBusqueda('');
-      return;
-    }
-
-    const porNombre = productos.filter((p) => p.nombre.toLowerCase().includes(termino.toLowerCase()));
-    if (porNombre.length === 1) {
-      agregarAlCarrito(porNombre[0], cantidadMultiplicador);
-      setBusqueda('');
-    } else if (porNombre.length === 0) {
-      setMensaje({ tipo: 'warning', texto: `No se encontró producto con código o nombre "${termino}"` });
+  // Si hacen clic en cualquier área vacía de la pantalla principal, regresar el foco al lector
+  const mantenerFocoEnLector = (e: React.MouseEvent) => {
+    if (hayModalAbierto) return;
+    const target = e.target as HTMLElement;
+    const interactivo = target.closest('input, select, textarea, button, a');
+    if (!interactivo) {
+      inputScanRef.current?.focus();
     }
   };
 
@@ -235,7 +313,7 @@ export const ModuloVentas: React.FC = () => {
       : [];
 
   return (
-    <div className="container-fluid py-2">
+    <div className="container-fluid py-2" onClick={mantenerFocoEnLector}>
       {mensaje && (
         <div className={`alert alert-${mensaje.tipo} alert-dismissible fade show py-2 mb-2`}>
           {mensaje.texto}
@@ -305,7 +383,7 @@ export const ModuloVentas: React.FC = () => {
         </div>
       </div>
 
-      {/* Área Principal: Tabla de Venta + Cuadrícula Dorada de Botones Rápidos */}
+      {/* Área Principal: Tabla de Venta + Cuadrícula Crema de Botones Rápidos */}
       <div className="row g-3">
         <div className={mostrarRapidos && botonesRapidos.length > 0 ? 'col-lg-8' : 'col-12'}>
           <div className="card shadow-sm" style={{ minHeight: '58vh' }}>
@@ -328,7 +406,7 @@ export const ModuloVentas: React.FC = () => {
                       <td colSpan={7} className="text-center text-muted py-5">
                         <div className="display-3 mb-2 opacity-50">🧺🥖</div>
                         <div className="fs-5 fw-semibold">
-                          Pase un producto por el lector, busque por nombre o toque un botón rápido de panadería.
+                          Pase un producto por el lector en cualquier momento, busque por nombre o toque un botón rápido.
                         </div>
                       </td>
                     </tr>
@@ -342,7 +420,10 @@ export const ModuloVentas: React.FC = () => {
                           <div className="input-group input-group-sm justify-content-center">
                             <button
                               className="btn btn-outline-secondary fw-bold px-2"
-                              onClick={() => cambiarCantidadCarrito(item.uid, item.cantidad - 1)}
+                              onClick={() => {
+                                cambiarCantidadCarrito(item.uid, item.cantidad - 1);
+                                inputScanRef.current?.focus();
+                              }}
                             >
                               -
                             </button>
@@ -355,7 +436,10 @@ export const ModuloVentas: React.FC = () => {
                             />
                             <button
                               className="btn btn-outline-secondary fw-bold px-2"
-                              onClick={() => cambiarCantidadCarrito(item.uid, item.cantidad + 1)}
+                              onClick={() => {
+                                cambiarCantidadCarrito(item.uid, item.cantidad + 1);
+                                inputScanRef.current?.focus();
+                              }}
                             >
                               +
                             </button>
@@ -370,7 +454,13 @@ export const ModuloVentas: React.FC = () => {
                           )}
                         </td>
                         <td className="text-end">
-                          <button className="btn btn-sm btn-outline-danger" onClick={() => eliminarDelCarrito(item.uid)}>
+                          <button
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => {
+                              eliminarDelCarrito(item.uid);
+                              inputScanRef.current?.focus();
+                            }}
+                          >
                             ✕
                           </button>
                         </td>
@@ -396,7 +486,7 @@ export const ModuloVentas: React.FC = () => {
                     <div className="col-6 col-xl-4" key={p.id}>
                       <button
                         className="btn btn-pan-rapido w-100 h-100 p-3 text-center d-flex align-items-center justify-content-center"
-                        style={{ minHeight: "85px" }}
+                        style={{ minHeight: '85px' }}
                         onClick={() => {
                           agregarAlCarrito(p, 1);
                           inputScanRef.current?.focus();
@@ -424,7 +514,13 @@ export const ModuloVentas: React.FC = () => {
                   <div className="fs-2 fw-bold">{carrito.reduce((a, b) => a + b.cantidad, 0)}</div>
                 </div>
                 {carrito.length > 0 && (
-                  <button className="btn btn-outline-danger btn-sm fw-bold" onClick={limpiarCarrito}>
+                  <button
+                    className="btn btn-outline-danger btn-sm fw-bold"
+                    onClick={() => {
+                      limpiarCarrito();
+                      inputScanRef.current?.focus();
+                    }}
+                  >
                     🗑 Vaciar Ticket
                   </button>
                 )}
