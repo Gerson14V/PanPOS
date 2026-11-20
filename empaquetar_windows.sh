@@ -177,6 +177,7 @@ echo Acceso directo "PanPOS" creado en el Escritorio.
 pause
 EOF
 
+echo "cp -f "$ROOT/assets/panpos.ico" "$DEST/panpos.ico"
 echo "==> 9. Creando guía rápida de instalación..."
 cat << 'EOF' > "$DESTINO/LEEME_INSTALACION.txt"
 ============================================================
