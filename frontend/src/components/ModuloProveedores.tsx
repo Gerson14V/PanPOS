@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
 import { api } from '../api/client';
+import { fechaLocalISO } from '../utils/fechaLocal';
 import { Departamento } from '../types/models';
 
 export const ModuloProveedores: React.FC = () => {
@@ -9,7 +10,7 @@ export const ModuloProveedores: React.FC = () => {
   const [editando, setEditando] = useState<Departamento | null>(null);
   const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'danger'; texto: string } | null>(null);
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = fechaLocalISO();
   const [desde, setDesde] = useState(hoy);
   const [hasta, setHasta] = useState(hoy);
   const [reporte, setReporte] = useState<any | null>(null);
@@ -32,16 +33,16 @@ export const ModuloProveedores: React.FC = () => {
 
   const aplicarRangoRapido = (tipo: 'hoy' | 'semana' | 'mes') => {
     const ahora = new Date();
-    const fin = ahora.toISOString().slice(0, 10);
+    const fin = fechaLocalISO(ahora);
     let inicio = fin;
 
     if (tipo === 'semana') {
       const d = new Date(ahora);
       d.setDate(d.getDate() - 6);
-      inicio = d.toISOString().slice(0, 10);
+      inicio = fechaLocalISO(d);
     } else if (tipo === 'mes') {
       const d = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-      inicio = d.toISOString().slice(0, 10);
+      inicio = fechaLocalISO(d);
     }
 
     setDesde(inicio);

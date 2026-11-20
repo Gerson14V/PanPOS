@@ -119,17 +119,22 @@ export const ModuloProductosInventario: React.FC = () => {
   const registrarMovimientoStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodAjuste || !usuario) return;
-    await api.post(`/productos/${prodAjuste.id}/stock`, {
-      usuario_id: usuario.id,
-      tipo: tipoMov,
-      cantidad: Number(cantMov),
-      motivo: motivoMov || 'Actualización de inventario',
-    });
-    setProdAjuste(null);
-    setCantMov('');
-    setMotivoMov('');
-    await recargarCatalogos();
-    setMensaje({ tipo: 'success', texto: 'Existencia de inventario actualizada.' });
+    try {
+      await api.post(`/productos/${prodAjuste.id}/stock`, {
+        usuario_id: usuario.id,
+        tipo: tipoMov,
+        cantidad: Number(cantMov),
+        motivo: motivoMov || 'Actualización de inventario',
+      });
+      setProdAjuste(null);
+      setCantMov('');
+      setMotivoMov('');
+      await recargarCatalogos();
+      setMensaje({ tipo: 'success', texto: 'Existencia de inventario actualizada.' });
+    } catch (err: any) {
+      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'No se pudo actualizar el inventario.' });
+      setProdAjuste(null);
+    }
   };
 
   const abrirModalKardex = async () => {
@@ -274,12 +279,12 @@ export const ModuloProductosInventario: React.FC = () => {
                   {!editandoId && (
                     <div className="col-6">
                       <label className="form-label small fw-bold">Stock Inicial</label>
-                      <input type="number" className="form-control form-control-sm" value={stockActual} onChange={(e) => setStockActual(e.target.value)} />
+                      <input type="number" min="0" className="form-control form-control-sm" value={stockActual} onChange={(e) => setStockActual(e.target.value)} />
                     </div>
                   )}
                   <div className="col-6">
                     <label className="form-label small fw-bold">Alerta Mínimo</label>
-                    <input type="number" className="form-control form-control-sm" value={stockMinimo} onChange={(e) => setStockMinimo(e.target.value)} />
+                    <input type="number" min="0" className="form-control form-control-sm" value={stockMinimo} onChange={(e) => setStockMinimo(e.target.value)} />
                   </div>
                 </div>
               )}

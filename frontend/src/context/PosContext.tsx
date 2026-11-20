@@ -12,9 +12,9 @@ interface PosContextType {
   clientes: Cliente[];
   configuracion: Record<string, string>;
   carrito: ItemCarrito[];
-  agregarAlCarrito: (prod: Producto, cantidad?: number) => void;
+  agregarAlCarrito: (prod: Producto, cantidad?: number) => string | null;
   agregarArticuloComun: (descripcion: string, precio: number, cantidad: number) => void;
-  cambiarCantidadCarrito: (uid: string, nuevaCantidad: number) => void;
+  cambiarCantidadCarrito: (uid: string, nuevaCantidad: number) => string | null;
   eliminarDelCarrito: (uid: string) => void;
   limpiarCarrito: () => void;
   recargarCatalogos: () => Promise<void>;
@@ -77,15 +77,35 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     recargarCatalogos();
   }, []);
 
-  const agregarAlCarrito = (prod: Producto, cantidad = 1) => {
+  const agregarAlCarrito = (prod: Producto, cantidad = 1): string | null => {
+    if (cantidad <= 0) {
+      return 'La cantidad debe ser mayor a 0.';
+    }
+
+    const stockDisponible = Math.max(0, Number(prod.stock_actual || 0));
+    const existenteActual = carrito.find((i) => i.producto_id === prod.id);
+    const cantActualEnCarrito = existenteActual ? existenteActual.cantidad : 0;
+
+    if (prod.controlar_stock) {
+      if (stockDisponible <= 0) {
+        return `Sin existencias de "${prod.nombre}" (Stock: 0). No se puede vender.`;
+      }
+      if (cantActualEnCarrito + cantidad > stockDisponible) {
+        return `Stock insuficiente de "${prod.nombre}". Solo hay ${stockDisponible} unidad(es) disponible(s).`;
+      }
+    }
+
     setCarrito((prev) => {
       const existente = prev.find((i) => i.producto_id === prod.id);
       const precio = Number(prod.precio_venta);
       if (existente) {
         const nuevaCant = existente.cantidad + cantidad;
+        if (prod.controlar_stock && nuevaCant > stockDisponible) {
+          return prev;
+        }
         return prev.map((i) =>
           i.producto_id === prod.id
-            ? { ...i, cantidad: nuevaCant, subtotal: nuevaCant * precio }
+            ? { ...i, cantidad: nuevaCant, subtotal: nuevaCant * precio, stock_actual: stockDisponible }
             : i
         );
       }
@@ -99,14 +119,17 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           precio_unitario: precio,
           cantidad,
           subtotal: cantidad * precio,
-          stock_actual: prod.stock_actual,
+          stock_actual: stockDisponible,
           controlar_stock: prod.controlar_stock,
         },
       ];
     });
+
+    return null;
   };
 
   const agregarArticuloComun = (descripcion: string, precio: number, cantidad: number) => {
+    const cantSegura = Math.max(1, cantidad);
     setCarrito((prev) => [
       ...prev,
       {
@@ -115,25 +138,45 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         codigo_barras: 'COMUN',
         descripcion_producto: descripcion,
         precio_unitario: precio,
-        cantidad,
-        subtotal: cantidad * precio,
+        cantidad: cantSegura,
+        subtotal: cantSegura * precio,
         controlar_stock: false,
       },
     ]);
   };
 
-  const cambiarCantidadCarrito = (uid: string, nuevaCantidad: number) => {
-    if (nuevaCantidad <= 0) {
+  const cambiarCantidadCarrito = (uid: string, nuevaCantidad: number): string | null => {
+    const cantEntera = Math.floor(Number(nuevaCantidad));
+    if (isNaN(cantEntera) || cantEntera <= 0) {
       eliminarDelCarrito(uid);
-      return;
+      return null;
     }
+
+    const item = carrito.find((i) => i.uid === uid);
+    if (item && item.controlar_stock) {
+      const maxStock = Math.max(0, Number(item.stock_actual ?? 0));
+      if (maxStock <= 0) {
+        eliminarDelCarrito(uid);
+        return `Sin existencias de "${item.descripcion_producto}".`;
+      }
+      if (cantEntera > maxStock) {
+        setCarrito((prev) =>
+          prev.map((i) =>
+            i.uid === uid ? { ...i, cantidad: maxStock, subtotal: maxStock * i.precio_unitario } : i
+          )
+        );
+        return `Stock insuficiente de "${item.descripcion_producto}". Máximo disponible: ${maxStock}.`;
+      }
+    }
+
     setCarrito((prev) =>
       prev.map((i) =>
         i.uid === uid
-          ? { ...i, cantidad: nuevaCantidad, subtotal: nuevaCantidad * i.precio_unitario }
+          ? { ...i, cantidad: cantEntera, subtotal: cantEntera * i.precio_unitario }
           : i
       )
     );
+    return null;
   };
 
   const eliminarDelCarrito = (uid: string) => {

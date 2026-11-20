@@ -77,17 +77,17 @@ export const ModuloVentas: React.FC = () => {
       );
 
       if (exacto) {
-        agregarAlCarrito(exacto, cantidadMultiplicador);
+        const err = agregarAlCarrito(exacto, cantidadMultiplicador);
         setBusqueda('');
-        setMensaje(null);
+        setMensaje(err ? { tipo: 'danger', texto: err } : null);
         return;
       }
 
       const porNombre = productos.filter((p) => p.nombre.toLowerCase().includes(termino.toLowerCase()));
       if (porNombre.length === 1) {
-        agregarAlCarrito(porNombre[0], cantidadMultiplicador);
+        const err = agregarAlCarrito(porNombre[0], cantidadMultiplicador);
         setBusqueda('');
-        setMensaje(null);
+        setMensaje(err ? { tipo: 'danger', texto: err } : null);
       } else if (porNombre.length === 0) {
         setMensaje({ tipo: 'warning', texto: `No se encontró producto con código o nombre "${termino}"` });
         setBusqueda('');
@@ -369,7 +369,8 @@ export const ModuloVentas: React.FC = () => {
                   type="button"
                   className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
                   onClick={() => {
-                    agregarAlCarrito(p, 1);
+                    const err = agregarAlCarrito(p, 1);
+                    if (err) setMensaje({ tipo: 'danger', texto: err });
                     setBusqueda('');
                     inputScanRef.current?.focus();
                   }}
@@ -450,15 +451,25 @@ export const ModuloVentas: React.FC = () => {
                             </button>
                             <input
                               type="number"
+                              min={0}
+                              max={item.controlar_stock ? item.stock_actual : undefined}
                               className="form-control text-center fw-bold"
                               style={{ maxWidth: '60px' }}
                               value={item.cantidad}
-                              onChange={(e) => cambiarCantidadCarrito(item.uid, Number(e.target.value))}
+                              onKeyDown={(e) => {
+                                if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault();
+                              }}
+                              onChange={(e) => {
+                                const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                const err = cambiarCantidadCarrito(item.uid, val);
+                                if (err) setMensaje({ tipo: 'warning', texto: err });
+                              }}
                             />
                             <button
                               className="btn btn-outline-secondary fw-bold px-2"
                               onClick={() => {
-                                cambiarCantidadCarrito(item.uid, item.cantidad + 1);
+                                const err = cambiarCantidadCarrito(item.uid, item.cantidad + 1);
+                                if (err) setMensaje({ tipo: 'warning', texto: err });
                                 inputScanRef.current?.focus();
                               }}
                             >
@@ -509,7 +520,8 @@ export const ModuloVentas: React.FC = () => {
                         className="btn btn-pan-rapido w-100 h-100 p-3 text-center d-flex align-items-center justify-content-center"
                         style={{ minHeight: '85px' }}
                         onClick={() => {
-                          agregarAlCarrito(p, 1);
+                          const err = agregarAlCarrito(p, 1);
+                          if (err) setMensaje({ tipo: 'danger', texto: err });
                           inputScanRef.current?.focus();
                         }}
                       >

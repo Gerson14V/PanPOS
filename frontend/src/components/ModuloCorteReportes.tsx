@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePos } from '../context/PosContext';
 import { api } from '../api/client';
+import { fechaLocalISO } from '../utils/fechaLocal';
 
 const DENOMINACIONES_CR = [
   { valor: 20000, label: '₡20,000', tipo: 'Billete' },
@@ -39,7 +40,7 @@ export const ModuloCorteReportes: React.FC = () => {
   const [cerrando, setCerrando] = useState(false);
 
   // Estados de Reportes y Gráficos (Un Día Específico / Semana / Mes / Intervalo)
-  const hoyStr = new Date().toISOString().slice(0, 10);
+  const hoyStr = fechaLocalISO();
   const [tipoPeriodo, setTipoPeriodo] = useState<TipoPeriodo>('un_dia');
   const [diaUnico, setDiaUnico] = useState<string>(hoyStr);
   const [desde, setDesde] = useState<string>(hoyStr);
@@ -108,7 +109,7 @@ export const ModuloCorteReportes: React.FC = () => {
   const seleccionarModoPeriodo = (tipo: TipoPeriodo) => {
     setTipoPeriodo(tipo);
     const ahora = new Date();
-    const fin = ahora.toISOString().slice(0, 10);
+    const fin = fechaLocalISO(ahora);
 
     if (tipo === 'un_dia') {
       setDesde(diaUnico);
@@ -117,13 +118,13 @@ export const ModuloCorteReportes: React.FC = () => {
     } else if (tipo === 'semana') {
       const d = new Date(ahora);
       d.setDate(d.getDate() - 6);
-      const inicio = d.toISOString().slice(0, 10);
+      const inicio = fechaLocalISO(d);
       setDesde(inicio);
       setHasta(fin);
       cargarReportePeriodo(inicio, fin);
     } else if (tipo === 'mes') {
       const d = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-      const inicio = d.toISOString().slice(0, 10);
+      const inicio = fechaLocalISO(d);
       setDesde(inicio);
       setHasta(fin);
       cargarReportePeriodo(inicio, fin);

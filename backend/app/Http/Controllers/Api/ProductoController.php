@@ -42,7 +42,7 @@ class ProductoController extends Controller
             'precio_compra' => 'required|numeric|min:0',
             'precio_venta' => 'required|numeric|min:0',
             'controlar_stock' => 'required|boolean',
-            'stock_actual' => 'nullable|integer',
+            'stock_actual' => 'nullable|integer|min:0',
             'stock_minimo' => 'nullable|integer|min:0',
             'mostrar_boton_rapido' => 'boolean',
             'usuario_id' => 'nullable|exists:usuarios,id',
@@ -111,6 +111,17 @@ class ProductoController extends Controller
             'cantidad' => 'required|integer|not_in:0',
             'motivo' => 'nullable|string|max:255',
         ]);
+
+        
+        // VALIDACION_STOCK_NO_NEGATIVO: el stock nunca puede quedar por debajo de 0
+        if ($producto->controlar_stock) {
+            $delta = $datos['tipo'] === 'merma' ? -abs((int) $datos['cantidad']) : (int) $datos['cantidad'];
+            if (($producto->stock_actual + $delta) < 0) {
+                return response()->json([
+                    'message' => "El inventario de \"{$producto->nombre}\" no puede quedar negativo (Existencia actual: {$producto->stock_actual}).",
+                ], 422);
+            }
+        }
 
         $movimiento = $this->inventarioService->registrarMovimiento(
             $producto,
