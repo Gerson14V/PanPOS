@@ -16,10 +16,24 @@ class TurnoCajaController extends Controller
         private BackupService $backupService
     ) {}
 
+    // Lista cortes históricos (filtrables por fecha YYYY-MM-DD)
+    public function index(Request $request): JsonResponse
+    {
+        $query = TurnoCaja::with('usuario:id,nombre')
+            ->orderByDesc('fecha_apertura');
+
+        if ($request->filled('fecha')) {
+            $query->whereDate('fecha_apertura', $request->string('fecha'));
+        }
+
+        return response()->json($query->limit(90)->get());
+    }
+
     public function turnoActivo(): JsonResponse
     {
-        $turno = TurnoCaja::with('usuario:id,nombre,username,rol')
+        $turno = TurnoCaja::with('usuario:id,nombre')
             ->where('estado', 'abierto')
+            ->latest('fecha_apertura')
             ->first();
 
         return response()->json(['turno_activo' => $turno]);
@@ -32,16 +46,26 @@ class TurnoCajaController extends Controller
             'monto_inicial' => 'required|numeric|min:0',
         ]);
 
-        $turno = $this->turnoCajaService->abrirTurno($datos['usuario_id'], (float) $datos['monto_inicial']);
+        $turno = $this->turnoCajaService->abrirTurno(
+            $datos['usuario_id'],
+            (float) $datos['monto_inicial']
+        );
+
         return response()->json($turno->load('usuario:id,nombre'), 201);
+    }
+
+    public function resumen(TurnoCaja $turno): JsonResponse
+    {
+        return response()->json($this->turnoCajaService->obtenerResumenTurno($turno));
     }
 
     public function registrarMovimiento(Request $request, TurnoCaja $turno): JsonResponse
     {
         $datos = $request->validate([
             'usuario_id' => 'required|exists:usuarios,id',
-            'tipo' => 'required|in:entrada,salida',
-            'metodo_pago' => 'nullable|in:efectivo,tarjeta,sinpe',
+            'cliente_id' => 'nullable|exists:clientes,id',
+            'tipo' => 'required|in:entrada,salida,prestamo_cliente,abono_cliente',
+            'metodo_pago' => 'required|in:efectivo,tarjeta,sinpe',
             'monto' => 'required|numeric|min:1',
             'concepto' => 'required|string|max:255',
         ]);
@@ -52,11 +76,6 @@ class TurnoCajaController extends Controller
         return response()->json($movimiento, 201);
     }
 
-    public function resumen(TurnoCaja $turno): JsonResponse
-    {
-        return response()->json($this->turnoCajaService->obtenerResumenTurno($turno));
-    }
-
     public function cerrar(Request $request, TurnoCaja $turno): JsonResponse
     {
         $datos = $request->validate([
@@ -64,17 +83,16 @@ class TurnoCajaController extends Controller
             'observaciones' => 'nullable|string|max:500',
         ]);
 
-        $cerrado = $this->turnoCajaService->cerrarTurno(
+        $turnoCerrado = $this->turnoCajaService->cerrarTurno(
             $turno,
             (float) $datos['total_efectivo_contado'],
             $datos['observaciones'] ?? null
         );
 
-        // Disparo automático de respaldo local y USB al cerrar turno
-        $respaldo = $this->backupService->generarRespaldo("turno_{$turno->id}");
+        $respaldo = $this->backupService->generarRespaldo('cierre_turno');
 
         return response()->json([
-            'turno' => $cerrado,
+            'turno' => $turnoCerrado,
             'respaldo' => $respaldo,
         ]);
     }

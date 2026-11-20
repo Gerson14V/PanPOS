@@ -9,15 +9,21 @@ export const ModuloProveedores: React.FC = () => {
   const [editando, setEditando] = useState<Departamento | null>(null);
   const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'danger'; texto: string } | null>(null);
 
-  // Filtros de periodo para el reporte de ventas por proveedor
   const hoy = new Date().toISOString().slice(0, 10);
   const [desde, setDesde] = useState(hoy);
   const [hasta, setHasta] = useState(hoy);
   const [reporte, setReporte] = useState<any | null>(null);
+  const [proveedorSeleccionadoId, setProveedorSeleccionadoId] = useState<number | null>(null);
 
   const consultarVentasProveedores = async (fechaDesde = desde, fechaHasta = hasta) => {
     const res = await api.get(`/reportes/ventas-periodo?desde=${fechaDesde}&hasta=${fechaHasta}`);
     setReporte(res.data);
+    const ranking = res.data.ranking_proveedores || [];
+    if (ranking.length > 0) {
+      setProveedorSeleccionadoId((prev) =>
+        prev !== null && ranking.some((r: any) => r.id === prev) ? prev : ranking[0].id
+      );
+    }
   };
 
   useEffect(() => {
@@ -31,7 +37,7 @@ export const ModuloProveedores: React.FC = () => {
 
     if (tipo === 'semana') {
       const d = new Date(ahora);
-      d.setDate(d.getDate() - 7);
+      d.setDate(d.getDate() - 6);
       inicio = d.toISOString().slice(0, 10);
     } else if (tipo === 'mes') {
       const d = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
@@ -43,21 +49,20 @@ export const ModuloProveedores: React.FC = () => {
     consultarVentasProveedores(inicio, fin);
   };
 
-  
   const eliminarProveedor = async (dep: Departamento) => {
     if (!window.confirm(`¿Está seguro de eliminar el proveedor "${dep.nombre}"?`)) return;
     try {
       await api.delete(`/departamentos/${dep.id}`);
       if (editando?.id === dep.id) {
         setEditando(null);
-        setNombreNuevo("");
+        setNombreNuevo('');
       }
       await recargarCatalogos();
       await consultarVentasProveedores();
-      setMensaje({ tipo: "success", texto: `Proveedor "${dep.nombre}" eliminado correctamente.` });
+      setMensaje({ tipo: 'success', texto: `Proveedor "${dep.nombre}" eliminado correctamente.` });
     } catch (err: any) {
-      const msg = err.response?.data?.errors?.proveedor?.[0] || err.response?.data?.message || "No se pudo eliminar el proveedor.";
-      setMensaje({ tipo: "danger", texto: msg });
+      const msg = err.response?.data?.errors?.proveedor?.[0] || err.response?.data?.message || 'No se pudo eliminar el proveedor.';
+      setMensaje({ tipo: 'danger', texto: msg });
     }
   };
 
@@ -81,6 +86,10 @@ export const ModuloProveedores: React.FC = () => {
     }
   };
 
+  const rankingProveedores: any[] = reporte?.ranking_proveedores || [];
+  const proveedorLider = rankingProveedores.length > 0 && rankingProveedores[0].unidades_vendidas > 0 ? rankingProveedores[0] : null;
+  const proveedorDetalle = rankingProveedores.find((p) => p.id === proveedorSeleccionadoId) || rankingProveedores[0] || null;
+
   return (
     <div className="container-fluid py-3">
       {mensaje && (
@@ -91,7 +100,7 @@ export const ModuloProveedores: React.FC = () => {
       )}
 
       <div className="row g-3">
-        {/* Columna Izquierda: Crear y Administrar Proveedores (Dos Pinos, Coca-Cola, etc.) */}
+        {/* Columna Izquierda: Administración de Proveedores */}
         <div className="col-lg-4">
           <div className="card shadow-sm border-0 mb-3">
             <div className="card-header bg-primary text-white fw-bold">
@@ -132,7 +141,7 @@ export const ModuloProveedores: React.FC = () => {
             <div className="card-header fw-bold bg-body-tertiary">
               Proveedores Registrados ({departamentos.length})
             </div>
-            <div className="list-group list-group-flush" style={{ maxHeight: '48vh', overflowY: 'auto' }}>
+            <div className="list-group list-group-flush" style={{ maxHeight: '50vh', overflowY: 'auto' }}>
               {departamentos.map((d) => {
                 const cantProductos = productos.filter((p) => p.departamento_id === d.id).length;
                 return (
@@ -165,11 +174,11 @@ export const ModuloProveedores: React.FC = () => {
           </div>
         </div>
 
-        {/* Columna Derecha: Reporte de Ventas y Ganancias por Proveedor con Selector de Periodo */}
+        {/* Columna Derecha: Ranking de Proveedores + Todos los Productos del Proveedor Seleccionado */}
         <div className="col-lg-8">
-          <div className="card shadow-sm border-0">
+          <div className="card shadow-sm border-0 mb-3">
             <div className="card-header bg-dark text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
-              <span className="fw-bold">📊 Reporte de Ventas por Proveedor / Departamento</span>
+              <span className="fw-bold">📊 Ranking de Ventas por Proveedor / Departamento</span>
               <div className="btn-group btn-group-sm">
                 <button className="btn btn-outline-light" onClick={() => aplicarRangoRapido('hoy')}>
                   Hoy
@@ -205,64 +214,100 @@ export const ModuloProveedores: React.FC = () => {
 
               {reporte && (
                 <>
-                  <div className="row g-3 mb-3">
-                    <div className="col-md-6">
-                      <div className="p-3 border rounded bg-primary-subtle">
-                        <div className="small fw-bold text-uppercase">Total Vendido en el Período</div>
-                        <div className="fs-3 fw-bold text-primary">₡{Number(reporte.ventas_totales).toLocaleString()}</div>
+                  {/* Tarjetas Resumen con Proveedor Líder */}
+                  <div className="row g-2 mb-3">
+                    <div className="col-md-4">
+                      <div className="p-3 border rounded bg-warning-subtle h-100">
+                        <div className="small fw-bold text-uppercase text-muted">🏆 Proveedor con Más Productos Vendidos</div>
+                        {proveedorLider ? (
+                          <>
+                            <div className="fs-5 fw-bolder text-dark">{proveedorLider.departamento}</div>
+                            <small className="fw-bold text-success">
+                              {proveedorLider.unidades_vendidas} unidades vendidas
+                            </small>
+                          </>
+                        ) : (
+                          <div className="small text-muted mt-1">Sin ventas en el período</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="p-3 border rounded bg-primary-subtle h-100">
+                        <div className="small fw-bold text-uppercase text-muted">Total Vendido</div>
+                        <div className="fs-4 fw-bold text-primary">₡{Number(reporte.ventas_totales).toLocaleString()}</div>
                       </div>
                     </div>
                     {usuario?.rol === 'admin' && (
-                      <div className="col-md-6">
-                        <div className="p-3 border rounded bg-success-subtle">
-                          <div className="small fw-bold text-uppercase">Ganancia Bruta Total de Proveedores</div>
-                          <div className="fs-3 fw-bold text-success">₡{Number(reporte.ganancia_total).toLocaleString()}</div>
+                      <div className="col-md-4">
+                        <div className="p-3 border rounded bg-success-subtle h-100">
+                          <div className="small fw-bold text-uppercase text-muted">Ganancia Bruta</div>
+                          <div className="fs-4 fw-bold text-success">₡{Number(reporte.ganancia_total).toLocaleString()}</div>
                         </div>
                       </div>
                     )}
                   </div>
 
+                  {/* Tabla Ranking de Departamentos/Proveedores (Clic en una fila para ver todos sus productos) */}
+                  <div className="small text-muted mb-1">
+                    Haga clic en cualquier proveedor para ver abajo el listado completo de todos sus productos del más vendido al menos vendido:
+                  </div>
                   <div className="table-responsive">
                     <table className="table table-hover align-middle mb-0">
                       <thead className="table-dark">
                         <tr>
+                          <th style={{ width: '45px' }}>#</th>
                           <th>Proveedor / Departamento</th>
                           <th className="text-center">Unidades Vendidas</th>
                           <th className="text-end">Total Ventas</th>
-                          {usuario?.rol === 'admin' && <th className="text-end">Costo Mercadería</th>}
                           {usuario?.rol === 'admin' && <th className="text-end">Ganancia Neta</th>}
+                          <th className="text-end">Ver Productos</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {reporte.ventas_por_departamento.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="text-center text-muted py-4">
-                              No se registraron ventas en el período seleccionado ({desde} a {hasta}).
-                            </td>
-                          </tr>
-                        ) : (
-                          reporte.ventas_por_departamento.map((d: any, idx: number) => (
-                            <tr key={idx}>
-                              <td className="fw-bold">{d.departamento}</td>
+                        {rankingProveedores.map((d: any, idx: number) => {
+                          const seleccionado = proveedorDetalle?.id === d.id;
+                          return (
+                            <tr
+                              key={d.id}
+                              style={{ cursor: 'pointer' }}
+                              className={seleccionado ? 'table-active' : ''}
+                              onClick={() => setProveedorSeleccionadoId(d.id)}
+                            >
+                              <td className="fw-bold">
+                                {idx === 0 && d.unidades_vendidas > 0 ? '🏆' : `#${idx + 1}`}
+                              </td>
+                              <td>
+                                <div className="fw-bold">{d.departamento}</div>
+                                <small className="text-muted">{d.total_productos_catalogo} producto(s) en catálogo</small>
+                              </td>
                               <td className="text-center">
-                                <span className="badge bg-secondary fs-6">{d.unidades_vendidas || 0}</span>
+                                <span className={`badge fs-6 ${d.unidades_vendidas > 0 ? 'bg-primary' : 'bg-secondary'}`}>
+                                  {d.unidades_vendidas} u.
+                                </span>
                               </td>
                               <td className="text-end fw-bold text-primary">
                                 ₡{Number(d.total_ventas).toLocaleString()}
                               </td>
                               {usuario?.rol === 'admin' && (
-                                <td className="text-end text-muted">
-                                  ₡{Number(d.costo_total || 0).toLocaleString()}
-                                </td>
-                              )}
-                              {usuario?.rol === 'admin' && (
                                 <td className="text-end fw-bold text-success">
                                   ₡{Number(d.ganancia).toLocaleString()}
                                 </td>
                               )}
+                              <td className="text-end">
+                                <button
+                                  type="button"
+                                  className={`btn btn-sm ${seleccionado ? 'btn-primary' : 'btn-outline-primary'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setProveedorSeleccionadoId(d.id);
+                                  }}
+                                >
+                                  {seleccionado ? 'Viendo' : 'Ver Todos'}
+                                </button>
+                              </td>
                             </tr>
-                          ))
-                        )}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -270,6 +315,66 @@ export const ModuloProveedores: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Tabla Detallada: TODOS los productos del proveedor seleccionado ordenados del más vendido al menos vendido */}
+          {proveedorDetalle && (
+            <div className="card shadow-sm border-0">
+              <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <span className="fw-bold">
+                  📦 Todos los Productos de "{proveedorDetalle.departamento}" (Ordenados por Más Vendidos)
+                </span>
+                <span className="badge bg-light text-dark">
+                  {proveedorDetalle.productos.length} productos en total
+                </span>
+              </div>
+              <div className="table-responsive" style={{ maxHeight: '42vh', overflowY: 'auto' }}>
+                <table className="table table-sm table-hover align-middle mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th style={{ width: '50px' }}>Pos.</th>
+                      <th>Código</th>
+                      <th>Producto</th>
+                      <th className="text-center">Unidades Vendidas</th>
+                      <th className="text-end">Total Vendido</th>
+                      {usuario?.rol === 'admin' && <th className="text-end">Ganancia</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {proveedorDetalle.productos.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center text-muted py-4">
+                          Este proveedor aún no tiene productos registrados en F3 Productos/Inventario.
+                        </td>
+                      </tr>
+                    ) : (
+                      proveedorDetalle.productos.map((prod: any, idx: number) => (
+                        <tr key={prod.id} className={prod.unidades_vendidas === 0 ? 'text-muted' : ''}>
+                          <td className="fw-bold">
+                            {idx === 0 && prod.unidades_vendidas > 0 ? '🥇' : idx === 1 && prod.unidades_vendidas > 0 ? '🥈' : idx === 2 && prod.unidades_vendidas > 0 ? '🥉' : `#${idx + 1}`}
+                          </td>
+                          <td><span className="badge bg-secondary">{prod.codigo_barras}</span></td>
+                          <td className="fw-semibold">{prod.nombre}</td>
+                          <td className="text-center">
+                            <span className={`badge fs-6 ${prod.unidades_vendidas > 0 ? 'bg-success' : 'bg-light text-muted border'}`}>
+                              {prod.unidades_vendidas}
+                            </span>
+                          </td>
+                          <td className="text-end fw-bold">
+                            ₡{Number(prod.total_ventas).toLocaleString()}
+                          </td>
+                          {usuario?.rol === 'admin' && (
+                            <td className="text-end fw-bold text-success">
+                              ₡{Number(prod.ganancia).toLocaleString()}
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

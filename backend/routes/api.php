@@ -33,6 +33,7 @@ Route::post('clientes/{cliente}/operacion-credito', [ClienteController::class, '
 Route::apiResource('clientes', ClienteController::class)->only(['index', 'store', 'update', 'destroy']);
 
 // Turnos de Caja y Corte
+Route::get('turnos', [TurnoCajaController::class, 'index']);
 Route::get('turnos/activo', [TurnoCajaController::class, 'turnoActivo']);
 Route::post('turnos/abrir', [TurnoCajaController::class, 'abrir']);
 Route::get('turnos/{turno}/resumen', [TurnoCajaController::class, 'resumen']);

@@ -30,6 +30,10 @@ export const ModuloVentas: React.FC = () => {
   const [ventasEnEspera, setVentasEnEspera] = useState<any[]>([]);
   const [ventaEnEsperaId, setVentaEnEsperaId] = useState<number | null>(null);
 
+  // Modal Ventas del Día
+  const [modalVentasDia, setModalVentasDia] = useState(false);
+  const [ventasDia, setVentasDia] = useState<any[]>([]);
+
   const [metodoPrincipal, setMetodoPrincipal] = useState<'efectivo' | 'tarjeta' | 'sinpe' | 'credito' | 'mixto'>('efectivo');
   const [pagaCon, setPagaCon] = useState('');
   const [clienteId, setClienteId] = useState<string>('');
@@ -49,9 +53,9 @@ export const ModuloVentas: React.FC = () => {
   const mostrarRapidos = (configuracion['panel_botones_rapidos'] ?? '1') === '1';
   const botonesRapidos = productos.filter((p) => p.mostrar_boton_rapido);
 
-  const hayModalAbierto = modalCobro || modalComun || modalCajaMov !== null || modalEspera || !usuario || !turno;
+  const hayModalAbierto =
+    modalCobro || modalComun || modalCajaMov !== null || modalEspera || modalVentasDia || !usuario || !turno;
 
-  // Función centralizada para procesar un código escaneado o buscado
   const procesarTerminoBusqueda = useCallback(
     (textoCrudo: string) => {
       let termino = textoCrudo.trim();
@@ -98,14 +102,12 @@ export const ModuloVentas: React.FC = () => {
     inputScanRef.current?.focus();
   };
 
-  // Devolver el foco al lector automáticamente cuando se cierra cualquier modal
   useEffect(() => {
     if (!hayModalAbierto) {
       inputScanRef.current?.focus();
     }
   }, [hayModalAbierto]);
 
-  // Interceptor global en F1 Ventas: captura el lector de código de barras aunque el input no tenga el foco
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F12') {
@@ -131,7 +133,6 @@ export const ModuloVentas: React.FC = () => {
         return;
       }
 
-      // Si hay un modal abierto, no interceptamos el teclado
       if (hayModalAbierto) return;
 
       const activeEl = document.activeElement as HTMLElement | null;
@@ -141,7 +142,6 @@ export const ModuloVentas: React.FC = () => {
         !esInputScan &&
         (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
 
-      // Si el cajero está editando manualmente la cantidad en una fila de la tabla, respetamos ese input
       if (esOtroInput) {
         if (e.key === 'Enter') {
           activeEl.blur();
@@ -150,7 +150,6 @@ export const ModuloVentas: React.FC = () => {
         return;
       }
 
-      // Si el foco NO está en la barra de búsqueda y el lector dispara caracteres o Enter:
       if (!esInputScan) {
         if (e.key === 'Enter') {
           if (busqueda.trim().length > 0) {
@@ -162,7 +161,6 @@ export const ModuloVentas: React.FC = () => {
           inputScanRef.current?.focus();
           setBusqueda((prev) => prev.slice(0, -1));
         } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-          // Captura el primer dígito o letra del lector al vuelo, enfoca el input y lo escribe sin perderlo
           e.preventDefault();
           inputScanRef.current?.focus();
           setBusqueda((prev) => prev + e.key);
@@ -174,7 +172,6 @@ export const ModuloVentas: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [carrito, hayModalAbierto, busqueda, procesarTerminoBusqueda]);
 
-  // Si hacen clic en cualquier área vacía de la pantalla principal, regresar el foco al lector
   const mantenerFocoEnLector = (e: React.MouseEvent) => {
     if (hayModalAbierto) return;
     const target = e.target as HTMLElement;
@@ -192,6 +189,30 @@ export const ModuloVentas: React.FC = () => {
     setMontoSinpeMixto('0');
     setMontoCreditoMixto('0');
     setModalCobro(true);
+  };
+
+  const abrirVentasDelDia = async () => {
+    if (!turno) return;
+    const res = await api.get(`/ventas?turno_id=${turno.id}`);
+    setVentasDia(res.data);
+    setModalVentasDia(true);
+  };
+
+  const eliminarTicketDelDia = async (ventaId: number, numeroTicket: number) => {
+    if (!usuario) return;
+    const motivo = window.prompt(
+      `¿Desea eliminar/anular el Ticket #${numeroTicket}? (Se devolverá el inventario y se revertirá el cobro).\nMotivo:`,
+      'Cancelado en caja'
+    );
+    if (!motivo || !motivo.trim()) return;
+
+    await api.post(`/ventas/${ventaId}/anular`, {
+      usuario_id: usuario.id,
+      motivo_anulacion: motivo.trim(),
+    });
+    await recargarCatalogos();
+    await abrirVentasDelDia();
+    setMensaje({ tipo: 'warning', texto: `Ticket #${numeroTicket} eliminado/anulado y existencias restauradas.` });
   };
 
   const confirmarVenta = async (estado: 'completada' | 'en_espera') => {
@@ -321,9 +342,9 @@ export const ModuloVentas: React.FC = () => {
         </div>
       )}
 
-      {/* Barra de búsqueda y botones de operación estilo Panadería Artesanal */}
+      {/* Barra de búsqueda y botones de operación */}
       <div className="row g-2 mb-2 align-items-center">
-        <div className="col-md-6 position-relative">
+        <div className="col-md-5 position-relative">
           <form onSubmit={handleScanSubmit} className="input-group input-group-lg shadow-sm">
             <span className="input-group-text bg-primary text-white fw-bold">Código/Nombre</span>
             <input
@@ -335,8 +356,8 @@ export const ModuloVentas: React.FC = () => {
               onChange={(e) => setBusqueda(e.target.value)}
               autoFocus
             />
-            <button className="btn btn-primary fw-bold px-4" type="submit">
-              ENTER Agregar
+            <button className="btn btn-primary fw-bold px-3" type="submit">
+              ENTER
             </button>
           </form>
 
@@ -364,26 +385,27 @@ export const ModuloVentas: React.FC = () => {
           )}
         </div>
 
-        <div className="col-md-6 d-flex flex-wrap gap-2 justify-content-md-end">
+        <div className="col-md-7 d-flex flex-wrap gap-2 justify-content-md-end">
+          
           <button className="btn btn-accion-artesanal" onClick={() => setModalComun(true)}>
             + Artículo Común
           </button>
           <button className="btn btn-accion-artesanal" onClick={() => confirmarVenta('en_espera')} disabled={carrito.length === 0}>
-            ⏸ Poner en Espera
+            ⏸ En Espera
           </button>
           <button className="btn btn-accion-artesanal" onClick={abrirTicketsEspera}>
-            F6 Recuperar Espera
+            F6 Recuperar
           </button>
           <button className="btn btn-outline-success fw-bold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('entrada'); }}>
-            F7 Entrada Efectivo
+            F7 Entrada
           </button>
           <button className="btn btn-outline-danger fw-bold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('salida'); }}>
-            F8 Salida Efectivo
+            F8 Salida
           </button>
         </div>
       </div>
 
-      {/* Área Principal: Tabla de Venta + Cuadrícula Crema de Botones Rápidos */}
+      {/* Área Principal: Tabla de Venta + Botones Rápidos */}
       <div className="row g-3">
         <div className={mostrarRapidos && botonesRapidos.length > 0 ? 'col-lg-8' : 'col-12'}>
           <div className="card shadow-sm card-watermark-panes" style={{ minHeight: '58vh' }}>
@@ -404,7 +426,6 @@ export const ModuloVentas: React.FC = () => {
                   {carrito.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="text-center text-muted py-5">
-                        
                         <div className="fs-5 fw-semibold">
                           Pase un producto por el lector en cualquier momento, busque por nombre o toque un botón rápido.
                         </div>
@@ -503,7 +524,7 @@ export const ModuloVentas: React.FC = () => {
         )}
       </div>
 
-      {/* Barra Inferior estilo Artesanal con Total y Botón Verde de Cobro */}
+      {/* Barra Inferior Total y Cobrar */}
       <div className="row g-3 mt-1 align-items-stretch">
         <div className="col-lg-8">
           <div className="card shadow-sm h-100 justify-content-center px-4 py-2">
@@ -546,6 +567,116 @@ export const ModuloVentas: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <div className="d-flex justify-content-end mt-2">
+        <button className="btn btn-accion-artesanal px-4 py-2 fw-bold" onClick={abrirVentasDelDia}>
+          🧾 Ventas del Día
+        </button>
+      </div>
+
+      {/* Modal Ventas del Día (Ver tickets y eliminar/anular) */}
+      {modalVentasDia && (
+        <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
+          <div className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div className="modal-content">
+              <div className="modal-header bg-primary text-white">
+                <h5 className="modal-title fw-bold">
+                  🧾 Ventas del Día — Turno #{turno?.id} ({ventasDia.length} tickets)
+                </h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setModalVentasDia(false)} />
+              </div>
+              <div className="modal-body p-0">
+                <table className="table table-hover align-middle mb-0">
+                  <thead className="table-dark">
+                    <tr>
+                      <th>Ticket #</th>
+                      <th>Hora</th>
+                      <th>Cliente</th>
+                      <th>Artículos</th>
+                      <th>Método de Pago</th>
+                      <th>Estado</th>
+                      <th className="text-end">Total</th>
+                      <th className="text-end">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ventasDia.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center text-muted py-4">
+                          Aún no hay ventas registradas en este turno.
+                        </td>
+                      </tr>
+                    ) : (
+                      ventasDia.map((v) => (
+                        <tr key={v.id} className={v.estado === 'anulada' ? 'table-danger' : ''}>
+                          <td className="fw-bold">#{v.numero_ticket}</td>
+                          <td className="small">{new Date(v.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                          <td>{v.cliente?.nombre || 'Contado'}</td>
+                          <td className="small">
+                            {v.detalles.map((d: any) => `${d.cantidad}x ${d.descripcion_producto}`).join(', ')}
+                            {v.motivo_anulacion && (
+                              <div className="text-danger fw-bold">Motivo: {v.motivo_anulacion}</div>
+                            )}
+                          </td>
+                          <td>
+                            {v.pagos && v.pagos.length > 0 ? (
+                              <div className="d-flex flex-wrap gap-1">
+                                {v.pagos.map((p: any, i: number) => (
+                                  <span key={i} className="badge bg-secondary text-uppercase">
+                                    {p.metodo_pago}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="badge bg-warning text-dark">EN ESPERA</span>
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                v.estado === 'completada'
+                                  ? 'bg-success'
+                                  : v.estado === 'anulada'
+                                  ? 'bg-danger'
+                                  : 'bg-warning text-dark'
+                              }`}
+                            >
+                              {v.estado.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="text-end fw-bold">₡{Number(v.total).toLocaleString()}</td>
+                          <td className="text-end">
+                            {v.estado !== 'anulada' && (
+                              <button
+                                className="btn btn-sm btn-outline-danger fw-bold"
+                                onClick={() => eliminarTicketDelDia(v.id, v.numero_ticket)}
+                              >
+                                🗑 Eliminar
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="modal-footer justify-content-between">
+                <span className="fw-bold text-primary">
+                  Total Cobrado Hoy: ₡
+                  {ventasDia
+                    .filter((v) => v.estado === 'completada')
+                    .reduce((acc, v) => acc + Number(v.total), 0)
+                    .toLocaleString()}
+                </span>
+                <button className="btn btn-secondary fw-bold" onClick={() => setModalVentasDia(false)}>
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal F12 Cobrar */}
       {modalCobro && (
