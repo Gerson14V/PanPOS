@@ -23,7 +23,7 @@ type SeccionConfig =
   | 'respaldo';
 
 export const ModuloConfiguracion: React.FC = () => {
-  const { configuracion, recargarCatalogos } = usePos();
+  const { configuracion, recargarCatalogos, usuario: usuarioActual, setUsuario } = usePos();
   const [seccionActiva, setSeccionActiva] = useState<SeccionConfig>('menu');
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [formConfig, setFormConfig] = useState<Record<string, string>>({});
@@ -35,6 +35,11 @@ export const ModuloConfiguracion: React.FC = () => {
   const [rol, setRol] = useState<'admin' | 'cajero'>('cajero');
   const [guardandoConfig, setGuardandoConfig] = useState(false);
   const [creandoUsuario, setCreandoUsuario] = useState(false);
+  const [editandoUsuario, setEditandoUsuario] = useState<Usuario | null>(null);
+  const [editNombre, setEditNombre] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
   const cargarUsuarios = async () => {
     try {
@@ -109,6 +114,45 @@ export const ModuloConfiguracion: React.FC = () => {
 
 
 
+  const abrirEdicionUsuario = (u: Usuario) => {
+    setEditandoUsuario(u);
+    setEditNombre(u.nombre);
+    setEditUsername(u.username);
+    setEditPassword('');
+  };
+
+  const guardarEdicionUsuario = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editandoUsuario || guardandoEdicion) return;
+    setGuardandoEdicion(true);
+    try {
+      const payload: Record<string, string> = {
+        nombre: editNombre.trim(),
+        username: editUsername.trim(),
+      };
+      if (editPassword.trim() !== '') {
+        payload.password = editPassword;
+      }
+      const res = await api.put(`/usuarios/${editandoUsuario.id}`, payload);
+      if (usuarioActual && usuarioActual.id === editandoUsuario.id) {
+        setUsuario(res.data);
+      }
+      setEditandoUsuario(null);
+      setEditPassword('');
+      await cargarUsuarios();
+      setMensaje({ tipo: 'success', texto: `Datos de "${res.data.nombre}" actualizados correctamente.` });
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.errors?.username?.[0] ||
+        err.response?.data?.errors?.password?.[0] ||
+        err.response?.data?.message ||
+        'No se pudo actualizar el usuario.';
+      setMensaje({ tipo: 'danger', texto: msg });
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  };
+
   const dispararBackupManual = async () => {
     try {
       const res = await api.post('/sistema/backup');
@@ -150,7 +194,10 @@ export const ModuloConfiguracion: React.FC = () => {
     <div className="container-fluid py-2">
       {/* Franja superior azul estilo eleventa */}
       <div className="bg-primary text-white px-3 py-2 rounded-top d-flex justify-content-between align-items-center shadow-sm">
-        <h5 className="mb-0 fw-bold text-uppercase tracking-wide">CONFIGURACIÓN</h5>
+        <div className="d-flex align-items-center gap-2">
+          <h5 className="mb-0 fw-bold text-uppercase tracking-wide">CONFIGURACIÓN</h5>
+          <span className="badge bg-light text-dark">PanPOS v1.0.0</span>
+        </div>
         <button
           type="button"
           className="btn btn-sm btn-warning fw-bold text-dark"
@@ -303,6 +350,9 @@ export const ModuloConfiguracion: React.FC = () => {
                             </span>
                           </td>
                           <td className="text-end">
+                            <button className="btn btn-sm btn-outline-success me-1" onClick={() => abrirEdicionUsuario(u)}>
+                              Editar
+                            </button>
                             <button className="btn btn-sm btn-outline-primary me-1" onClick={() => alternarRolRapido(u)}>
                               Cambiar a {u.rol === 'admin' ? 'CAJERO' : 'ADMIN'}
                             </button>
@@ -614,6 +664,59 @@ export const ModuloConfiguracion: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Modal Editar Usuario (Nombre, Username y Contraseña) */}
+      {editandoUsuario && (
+        <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <form className="modal-content" onSubmit={guardarEdicionUsuario}>
+              <div className="modal-header bg-primary text-white">
+                <h5 className="modal-title fw-bold">✏️ Editar Usuario — {editandoUsuario.nombre}</h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setEditandoUsuario(null)} />
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label fw-semibold">Nombre Completo</label>
+                  <input
+                    className="form-control"
+                    value={editNombre}
+                    onChange={(e) => setEditNombre(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-semibold">Usuario de Acceso (Login)</label>
+                  <input
+                    className="form-control"
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="mb-2">
+                  <label className="form-label fw-semibold">Nueva Contraseña (Opcional)</label>
+                  <input
+                    type="password"
+                    minLength={4}
+                    className="form-control"
+                    placeholder="Deje en blanco para mantener la actual"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline-secondary" onClick={() => setEditandoUsuario(null)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-success fw-bold px-4" disabled={guardandoEdicion}>
+                  {guardandoEdicion ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

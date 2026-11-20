@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Route;
 
 // Rutas públicas mínimas (pantalla de login)
 Route::get('sistema/publico', [UsuarioConfigController::class, 'estadoPublico']);
-Route::post('auth/login', [UsuarioConfigController::class, 'login']);
+Route::post('auth/login', [UsuarioConfigController::class, 'login'])->middleware('throttle:5,1');
 
 // Rutas protegidas para operadores autenticados (Admin y Cajero)
 Route::middleware('auth:sanctum')->group(function () {

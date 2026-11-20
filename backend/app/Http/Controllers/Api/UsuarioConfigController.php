@@ -137,6 +137,7 @@ class UsuarioConfigController extends Controller
     {
         $datos = $request->validate([
             'nombre' => 'sometimes|string|max:100',
+            'username' => 'sometimes|string|max:50|unique:usuarios,username,' . $usuario->id,
             'password' => 'nullable|string|min:4',
             'rol' => 'sometimes|in:admin,cajero',
             'activo' => 'sometimes|boolean',

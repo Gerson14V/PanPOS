@@ -15,12 +15,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Blindaje de SQLite contra cortes de energía e integridad referencial
+        // WAL, synchronous=FULL y busy_timeout=5000 ya se aplican desde config/database.php
         if (DB::connection() instanceof SQLiteConnection) {
-            DB::statement('PRAGMA journal_mode = WAL;');
-            DB::statement('PRAGMA synchronous = FULL;');
             DB::statement('PRAGMA foreign_keys = ON;');
-            DB::statement('PRAGMA busy_timeout = 5000;');
         }
     }
 }
