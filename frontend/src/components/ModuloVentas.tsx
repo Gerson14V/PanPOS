@@ -31,6 +31,7 @@ export const ModuloVentas: React.FC = () => {
   const [ventasEnEspera, setVentasEnEspera] = useState<any[]>([]);
   const [ventaEnEsperaId, setVentaEnEsperaId] = useState<number | null>(null);
   const [procesandoVenta, setProcesandoVenta] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState<string>('');
   const [procesandoMovCaja, setProcesandoMovCaja] = useState(false);
   const [anulandoId, setAnulandoId] = useState<number | null>(null);
 
@@ -204,7 +205,13 @@ export const ModuloVentas: React.FC = () => {
     }
   };
 
+  const generarClaveIdempotencia = () =>
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `sale-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
   const abrirModalCobro = () => {
+    setIdempotencyKey(generarClaveIdempotencia());
     setMetodoPrincipal('efectivo');
     setPagaCon(String(totalVenta));
     setMontoEfectivoMixto(String(totalVenta));
@@ -280,6 +287,7 @@ export const ModuloVentas: React.FC = () => {
     setProcesandoVenta(true);
     try {
       await api.post('/ventas', {
+        idempotency_key: estado === 'completada' ? (idempotencyKey || generarClaveIdempotencia()) : null,
         venta_en_espera_id: ventaEnEsperaId,
         turno_id: turno.id,
         usuario_id: usuario.id,
@@ -295,6 +303,7 @@ export const ModuloVentas: React.FC = () => {
       });
 
       limpiarCarrito();
+      setIdempotencyKey('');
       setVentaEnEsperaId(null);
       setClienteId('');
       setModalCobro(false);

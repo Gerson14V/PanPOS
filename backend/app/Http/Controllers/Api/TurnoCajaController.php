@@ -76,7 +76,7 @@ class TurnoCajaController extends Controller
     public function registrarMovimiento(Request $request, TurnoCaja $turno): JsonResponse
     {
         $datos = $request->validate([
-            'cliente_id' => 'nullable|exists:clientes,id',
+            'cliente_id' => 'required_if:tipo,prestamo_cliente,abono_cliente|nullable|exists:clientes,id',
             'tipo' => 'required|in:entrada,salida,prestamo_cliente,abono_cliente',
             'metodo_pago' => 'required|in:efectivo,tarjeta,sinpe',
             'monto' => 'required|numeric|min:1',

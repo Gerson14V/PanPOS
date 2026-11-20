@@ -25,21 +25,26 @@ class VentaController extends Controller
             $query->where('estado', $request->string('estado'));
         }
 
-        return response()->json($query->limit(250)->get());
+        return response()->json($query->get());
     }
 
     public function store(Request $request): JsonResponse
     {
+        $request->merge([
+            'estado' => $request->input('estado') ?: 'completada',
+        ]);
+
         $datos = $request->validate([
+            'idempotency_key' => 'nullable|string|max:80',
             'venta_en_espera_id' => 'nullable|exists:ventas,id',
             'turno_id' => 'required|exists:turnos_caja,id',
             'cliente_id' => 'nullable|exists:clientes,id',
-            'estado' => 'nullable|in:completada,en_espera',
+            'estado' => 'required|in:completada,en_espera',
             'items' => 'required|array|min:1',
             'items.*.producto_id' => 'nullable|exists:productos,id',
             'items.*.descripcion_producto' => 'nullable|string|max:150',
             'items.*.cantidad' => 'required|integer|min:1',
-            'items.*.precio_unitario' => 'required|numeric|min:0',
+            'items.*.precio_unitario' => 'required_without:items.*.producto_id|nullable|numeric|min:0',
             'pagos' => 'required_if:estado,completada|array',
             'pagos.*.metodo_pago' => 'required|in:efectivo,tarjeta,sinpe,credito',
             'pagos.*.monto' => 'required|numeric|min:0.01',
@@ -48,6 +53,7 @@ class VentaController extends Controller
         ]);
 
         $datos['usuario_id'] = $request->user()->id;
+
         $venta = $this->ventaService->procesarVenta($datos);
         return response()->json($venta, 201);
     }

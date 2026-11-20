@@ -72,6 +72,12 @@ class TurnoCajaService
                 }
             }
 
+            if (in_array($datos['tipo'], ['prestamo_cliente', 'abono_cliente'], true) && empty($datos['cliente_id'])) {
+                throw ValidationException::withMessages([
+                    'cliente_id' => 'Debe seleccionar un cliente para registrar un préstamo o abono.',
+                ]);
+            }
+
             if (!empty($datos['cliente_id'])) {
                 $cliente = Cliente::lockForUpdate()->findOrFail($datos['cliente_id']);
                 $deudaActual = round((float) $cliente->saldo_deudor, 2);

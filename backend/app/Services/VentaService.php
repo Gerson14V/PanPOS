@@ -17,7 +17,23 @@ class VentaService
 
     public function procesarVenta(array $datos): Venta
     {
-        return DB::transaction(function () use ($datos) {
+        $idempotencyKey = !empty($datos['idempotency_key']) ? trim((string) $datos['idempotency_key']) : null;
+
+        if ($idempotencyKey !== null) {
+            $existente = Venta::where('idempotency_key', $idempotencyKey)->first();
+            if ($existente) {
+                return $existente->load(['detalles', 'pagos', 'cliente', 'usuario:id,nombre']);
+            }
+        }
+
+        return DB::transaction(function () use ($datos, $idempotencyKey) {
+            if ($idempotencyKey !== null) {
+                $existente = Venta::where('idempotency_key', $idempotencyKey)->first();
+                if ($existente) {
+                    return $existente->load(['detalles', 'pagos', 'cliente', 'usuario:id,nombre']);
+                }
+            }
+
             $estado = $datos['estado'] ?? 'completada';
 
             $turno = TurnoCaja::lockForUpdate()->findOrFail($datos['turno_id']);
@@ -32,6 +48,11 @@ class VentaService
                 if ($venta->estado !== 'en_espera') {
                     throw ValidationException::withMessages([
                         'venta_en_espera_id' => 'Este ticket ya no se encuentra en espera.',
+                    ]);
+                }
+                if ((int) $venta->turno_id !== (int) $turno->id) {
+                    throw ValidationException::withMessages([
+                        'venta_en_espera_id' => 'Este ticket en espera pertenece a otro turno de caja.',
                     ]);
                 }
                 $venta->detalles()->delete();
@@ -66,16 +87,21 @@ class VentaService
                     }
                     $producto = $productosBloqueados[$prodId];
                     $costoHistorico = (float) $producto->precio_compra;
+                    // Precio y nombre autoritativos desde la base de datos
+                    $precioUnitario = (float) $producto->precio_venta;
+                    $descripcion = $producto->nombre;
                     $cantidadesPorProducto[$prodId] = ($cantidadesPorProducto[$prodId] ?? 0) + $cantidad;
+                } else {
+                    $precioUnitario = (float) ($item['precio_unitario'] ?? 0);
+                    $descripcion = trim((string) ($item['descripcion_producto'] ?? '')) ?: 'Artículo Común';
                 }
 
-                $precioUnitario = (float) $item['precio_unitario'];
                 $subtotal = round($cantidad * $precioUnitario, 2);
                 $totalCalculado += $subtotal;
 
                 $detallesPreparados[] = [
                     'producto' => $producto,
-                    'descripcion_producto' => $item['descripcion_producto'] ?? $producto?->nombre ?? 'Artículo Común',
+                    'descripcion_producto' => $descripcion,
                     'cantidad' => $cantidad,
                     'costo_unitario_historico' => $costoHistorico,
                     'precio_unitario' => $precioUnitario,
@@ -83,7 +109,6 @@ class VentaService
                 ];
             }
 
-            // Validación atómica de existencias agrupadas por producto
             if ($estado === 'completada') {
                 foreach ($cantidadesPorProducto as $prodId => $cantTotal) {
                     $prod = $productosBloqueados[$prodId];
@@ -97,6 +122,7 @@ class VentaService
 
             $venta->fill([
                 'numero_ticket' => $numeroTicket,
+                'idempotency_key' => $idempotencyKey,
                 'turno_id' => $turno->id,
                 'usuario_id' => $datos['usuario_id'],
                 'cliente_id' => $datos['cliente_id'] ?? null,
@@ -128,6 +154,7 @@ class VentaService
 
             if ($estado === 'completada') {
                 $sumaPagos = 0.0;
+                $tieneCredito = false;
 
                 foreach ($datos['pagos'] as $pago) {
                     $montoPago = round((float) $pago['monto'], 2);
@@ -139,9 +166,7 @@ class VentaService
                                 'cliente_id' => 'Debe seleccionar un cliente para registrar una venta a crédito (fiado).',
                             ]);
                         }
-
-                        $cliente = Cliente::lockForUpdate()->findOrFail($datos['cliente_id']);
-                        $cliente->increment('saldo_deudor', $montoPago);
+                        $tieneCredito = true;
                     }
 
                     PagoVenta::create([
@@ -158,10 +183,14 @@ class VentaService
                         'pagos' => "La suma de los pagos ({$sumaPagos}) no coincide con el total de la venta ({$venta->total}).",
                     ]);
                 }
+
+                if ($tieneCredito && !empty($datos['cliente_id'])) {
+                    $this->recalcularSaldoCliente((int) $datos['cliente_id']);
+                }
             }
 
             return $venta->load(['detalles', 'pagos', 'cliente', 'usuario:id,nombre']);
-        });
+        }, 3);
     }
 
     public function anularVenta(Venta $venta, int $usuarioId, string $motivo): Venta
@@ -183,8 +212,10 @@ class VentaService
             }
 
             $ventaBloqueada->load(['detalles.producto', 'pagos']);
+            $estabaCompletada = $ventaBloqueada->estado === 'completada';
+            $montoCredito = (float) $ventaBloqueada->pagos->where('metodo_pago', 'credito')->sum('monto');
 
-            if ($ventaBloqueada->estado === 'completada') {
+            if ($estabaCompletada) {
                 foreach ($ventaBloqueada->detalles as $detalle) {
                     if ($detalle->producto && $detalle->producto->controlar_stock) {
                         $this->inventarioService->registrarMovimiento(
@@ -196,15 +227,6 @@ class VentaService
                         );
                     }
                 }
-
-                $montoCredito = (float) $ventaBloqueada->pagos->where('metodo_pago', 'credito')->sum('monto');
-                if ($montoCredito > 0 && $ventaBloqueada->cliente_id) {
-                    $cliente = Cliente::lockForUpdate()->find($ventaBloqueada->cliente_id);
-                    if ($cliente) {
-                        $nuevoSaldo = max(0, round((float) $cliente->saldo_deudor - $montoCredito, 2));
-                        $cliente->update(['saldo_deudor' => $nuevoSaldo]);
-                    }
-                }
             }
 
             $ventaBloqueada->update([
@@ -214,7 +236,40 @@ class VentaService
                 'fecha_anulacion' => now(),
             ]);
 
+            if ($estabaCompletada && $montoCredito > 0 && $ventaBloqueada->cliente_id) {
+                $this->recalcularSaldoCliente((int) $ventaBloqueada->cliente_id);
+            }
+
             return $ventaBloqueada->fresh(['detalles', 'pagos', 'cliente', 'anuladaPor:id,nombre']);
-        });
+        }, 3);
+    }
+
+    // Reconstruye el saldo exacto desde el libro de ventas a crédito, préstamos y abonos
+    public function recalcularSaldoCliente(int $clienteId): void
+    {
+        $cliente = Cliente::lockForUpdate()->find($clienteId);
+        if (!$cliente) {
+            return;
+        }
+
+        $totalFiado = (float) DB::table('pagos_venta')
+            ->join('ventas', 'pagos_venta.venta_id', '=', 'ventas.id')
+            ->where('ventas.cliente_id', $clienteId)
+            ->where('ventas.estado', 'completada')
+            ->where('pagos_venta.metodo_pago', 'credito')
+            ->sum('pagos_venta.monto');
+
+        $totalPrestamos = (float) DB::table('movimientos_caja')
+            ->where('cliente_id', $clienteId)
+            ->where('tipo', 'prestamo_cliente')
+            ->sum('monto');
+
+        $totalAbonos = (float) DB::table('movimientos_caja')
+            ->where('cliente_id', $clienteId)
+            ->where('tipo', 'abono_cliente')
+            ->sum('monto');
+
+        $saldoReal = max(0, round($totalFiado + $totalPrestamos - $totalAbonos, 2));
+        $cliente->update(['saldo_deudor' => $saldoReal]);
     }
 }
