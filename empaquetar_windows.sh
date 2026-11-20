@@ -931,13 +931,10 @@ End If
 p = base & "\browser_profile"
 e1 = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 e2 = "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
-c1 = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 If fso.FileExists(e1) Then
 shell.Run """" & e1 & """ --app=http://127.0.0.1:8000 --user-data-dir=""" & p & """ --start-maximized", 1, False
 ElseIf fso.FileExists(e2) Then
 shell.Run """" & e2 & """ --app=http://127.0.0.1:8000 --user-data-dir=""" & p & """ --start-maximized", 1, False
-ElseIf fso.FileExists(c1) Then
-shell.Run """" & c1 & """ --app=http://127.0.0.1:8000 --user-data-dir=""" & p & """ --start-maximized", 1, False
 Else
 shell.Run "http://127.0.0.1:8000", 1, False
 End If
