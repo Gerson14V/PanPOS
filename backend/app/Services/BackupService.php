@@ -17,7 +17,10 @@ class BackupService
         $timestamp = now()->format('Y-m-d_H-i-s');
         $nombreArchivo = "panpos_{$prefijo}_{$timestamp}.sqlite";
 
-        $rutaLocalDir = trim($config['ruta_respaldo_local'] ?? '') ?: storage_path('app/backups');
+        $rutaLocalDir = trim($config['ruta_respaldo_local'] ?? '');
+        if ($rutaLocalDir === '' || (PHP_OS_FAMILY === 'Windows' && str_starts_with($rutaLocalDir, '/'))) {
+            $rutaLocalDir = storage_path('app/backups');
+        }
         if (!File::exists($rutaLocalDir)) {
             File::makeDirectory($rutaLocalDir, 0755, true);
         }

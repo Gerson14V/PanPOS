@@ -24,24 +24,47 @@ class ReporteExcelDiarioService
             }
         }
 
+        $candidatos = [];
+        $oneDrive = getenv('OneDrive') ?: ($_SERVER['OneDrive'] ?? '');
+        if ($oneDrive) {
+            $candidatos[] = $oneDrive . DIRECTORY_SEPARATOR . 'Escritorio';
+            $candidatos[] = $oneDrive . DIRECTORY_SEPARATOR . 'Desktop';
+        }
+
+        $userProfile = getenv('USERPROFILE') ?: ($_SERVER['USERPROFILE'] ?? '');
+        if ($userProfile) {
+            $candidatos[] = $userProfile . DIRECTORY_SEPARATOR . 'OneDrive' . DIRECTORY_SEPARATOR . 'Escritorio';
+            $candidatos[] = $userProfile . DIRECTORY_SEPARATOR . 'OneDrive' . DIRECTORY_SEPARATOR . 'Desktop';
+            $candidatos[] = $userProfile . DIRECTORY_SEPARATOR . 'Escritorio';
+            $candidatos[] = $userProfile . DIRECTORY_SEPARATOR . 'Desktop';
+        }
+
         $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? '');
         if (!$home && function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
             $info = posix_getpwuid(posix_geteuid());
             $home = $info['dir'] ?? '';
         }
+        if ($home) {
+            $candidatos[] = $home . DIRECTORY_SEPARATOR . 'Escritorio';
+            $candidatos[] = $home . DIRECTORY_SEPARATOR . 'Desktop';
+        }
 
-        if ($home && is_dir($home . '/Escritorio')) {
-            $carpeta = $home . '/Escritorio';
-        } elseif ($home && is_dir($home . '/Desktop')) {
-            $carpeta = $home . '/Desktop';
-        } else {
+        $carpeta = null;
+        foreach ($candidatos as $dir) {
+            if ($dir && is_dir($dir) && is_writable($dir)) {
+                $carpeta = $dir;
+                break;
+            }
+        }
+
+        if (!$carpeta) {
             $carpeta = storage_path('app/reportes');
             if (!is_dir($carpeta)) {
                 mkdir($carpeta, 0755, true);
             }
         }
 
-        return $carpeta . '/Ventas_Diarias_PanPOS.xls';
+        return rtrim($carpeta, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'Ventas_Diarias_PanPOS.xls';
     }
 
     public function generarHtmlMaestro(): string
