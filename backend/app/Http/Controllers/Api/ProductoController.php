@@ -45,8 +45,8 @@ class ProductoController extends Controller
             'stock_actual' => 'nullable|integer|min:0',
             'stock_minimo' => 'nullable|integer|min:0',
             'mostrar_boton_rapido' => 'boolean',
-            'usuario_id' => 'nullable|exists:usuarios,id',
         ]);
+        $datos['usuario_id'] = $request->user()->id;
 
         $producto = DB::transaction(function () use ($datos) {
             $stockInicial = max(0, (int) ($datos['stock_actual'] ?? 0));
@@ -115,7 +115,6 @@ class ProductoController extends Controller
     public function ajustarStock(Request $request, Producto $producto): JsonResponse
     {
         $datos = $request->validate([
-            'usuario_id' => 'required|exists:usuarios,id',
             'tipo' => 'required|in:entrada,ajuste,merma',
             'cantidad' => 'required|integer|not_in:0',
             'motivo' => 'nullable|string|max:255',
@@ -123,7 +122,7 @@ class ProductoController extends Controller
 
         $productoActualizado = $this->inventarioService->registrarMovimiento(
             $producto,
-            (int) $datos['usuario_id'],
+            (int) $request->user()->id,
             $datos['tipo'],
             (int) $datos['cantidad'],
             $datos['motivo'] ?? null

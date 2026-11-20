@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
-use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
 class Usuario extends Authenticatable
 {
+    use HasApiTokens;
+
     protected $table = 'usuarios';
 
     protected $fillable = [
@@ -24,7 +27,7 @@ class Usuario extends Authenticatable
 
     protected $casts = [
         'activo' => 'boolean',
-        'password' => 'hashed', // Laravel encripta automáticamente con Bcrypt al guardar
+        'password' => 'hashed',
     ];
 
     public function turnos(): HasMany

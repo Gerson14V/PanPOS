@@ -57,12 +57,11 @@ class TurnoCajaController extends Controller
     public function abrir(Request $request): JsonResponse
     {
         $datos = $request->validate([
-            'usuario_id' => 'required|exists:usuarios,id',
             'monto_inicial' => 'required|numeric|min:0',
         ]);
 
         $turno = $this->turnoCajaService->abrirTurno(
-            $datos['usuario_id'],
+            (int) $request->user()->id,
             (float) $datos['monto_inicial']
         );
 
@@ -77,7 +76,6 @@ class TurnoCajaController extends Controller
     public function registrarMovimiento(Request $request, TurnoCaja $turno): JsonResponse
     {
         $datos = $request->validate([
-            'usuario_id' => 'required|exists:usuarios,id',
             'cliente_id' => 'nullable|exists:clientes,id',
             'tipo' => 'required|in:entrada,salida,prestamo_cliente,abono_cliente',
             'metodo_pago' => 'required|in:efectivo,tarjeta,sinpe',
@@ -86,6 +84,7 @@ class TurnoCajaController extends Controller
         ]);
 
         $datos['turno_id'] = $turno->id;
+        $datos['usuario_id'] = $request->user()->id;
         $movimiento = $this->turnoCajaService->registrarMovimientoCaja($datos);
 
         return response()->json($movimiento, 201);

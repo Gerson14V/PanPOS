@@ -14,6 +14,65 @@ use Illuminate\Validation\ValidationException;
 
 class UsuarioConfigController extends Controller
 {
+    private const CLAVES_CONFIG_PERMITIDAS = [
+        'nombre_negocio',
+        'cedula_negocio',
+        'telefono_negocio',
+        'direccion_negocio',
+        'simbolo_moneda',
+        'modulo_clientes_activo',
+        'modulo_inventario_activo',
+        'panel_botones_rapidos',
+        'habilitar_bitacora_kardex',
+        'impresion_escpos_activa',
+        'ancho_papel_mm',
+        'nombre_impresora',
+        'abrir_cajon_automatico',
+        'ruta_respaldo_local',
+        'ruta_respaldo_usb',
+        'ruta_excel_maestro',
+        'encabezado_ticket',
+        'mensaje_ticket',
+        'sinpe_telefono_receptor',
+        'limite_credito_default',
+        'iva_porcentaje',
+        'iva_canasta_basica',
+        'fondo_inicial_sugerido',
+        'folio_sucursal',
+        'folio_terminal',
+        'fe_hacienda_activa',
+        'fe_ambiente',
+        'fe_codigo_actividad',
+        'fe_cabys_default',
+        'fe_usuario_atv',
+        'fe_ruta_p12',
+    ];
+
+    private const CLAVES_RUTA = [
+        'ruta_respaldo_local',
+        'ruta_respaldo_usb',
+        'ruta_excel_maestro',
+        'fe_ruta_p12',
+    ];
+
+    public function estadoPublico(): JsonResponse
+    {
+        $config = ConfiguracionSistema::whereIn('clave', [
+            'nombre_negocio',
+            'fondo_inicial_sugerido',
+        ])->pluck('valor', 'clave');
+
+        $turno = TurnoCaja::select('id', 'fecha_apertura', 'estado')
+            ->where('estado', 'abierto')
+            ->latest('fecha_apertura')
+            ->first();
+
+        return response()->json([
+            'configuracion' => $config,
+            'turno_activo' => $turno,
+        ]);
+    }
+
     public function login(Request $request): JsonResponse
     {
         $datos = $request->validate([
@@ -35,7 +94,25 @@ class UsuarioConfigController extends Controller
             ]);
         }
 
-        return response()->json(['usuario' => $usuario]);
+        // Revocar tokens previos del mismo operador y emitir uno nuevo
+        $usuario->tokens()->delete();
+        $token = $usuario->createToken('panpos-terminal')->plainTextToken;
+
+        return response()->json([
+            'usuario' => $usuario,
+            'token' => $token,
+        ]);
+    }
+
+    public function me(Request $request): JsonResponse
+    {
+        return response()->json(['usuario' => $request->user()]);
+    }
+
+    public function logout(Request $request): JsonResponse
+    {
+        $request->user()?->currentAccessToken()?->delete();
+        return response()->json(['mensaje' => 'Sesión cerrada correctamente.']);
     }
 
     public function listarUsuarios(): JsonResponse
@@ -104,6 +181,8 @@ class UsuarioConfigController extends Controller
             ]);
         }
 
+        $usuario->tokens()->delete();
+
         $tieneHistorial = DB::table('turnos_caja')->where('usuario_id', $usuario->id)->exists()
             || DB::table('ventas')->where('usuario_id', $usuario->id)->exists();
 
@@ -131,10 +210,35 @@ class UsuarioConfigController extends Controller
             'configuraciones' => 'required|array',
         ]);
 
+        $publicPathReal = realpath(public_path()) ?: public_path();
+        $publicNorm = strtolower(str_replace('\\', '/', rtrim($publicPathReal, '/\\')));
+
         foreach ($datos['configuraciones'] as $clave => $valor) {
+            if (!in_array($clave, self::CLAVES_CONFIG_PERMITIDAS, true)) {
+                continue;
+            }
+
+            $valorStr = trim((string) ($valor ?? ''));
+
+            if (in_array($clave, self::CLAVES_RUTA, true) && $valorStr !== '') {
+                $rutaNorm = strtolower(str_replace('\\', '/', $valorStr));
+                $real = realpath($valorStr);
+                $realNorm = $real ? strtolower(str_replace('\\', '/', $real)) : $rutaNorm;
+
+                if (
+                    str_contains($rutaNorm, '/public') ||
+                    str_starts_with($realNorm, $publicNorm) ||
+                    str_contains($rutaNorm, '..')
+                ) {
+                    throw ValidationException::withMessages([
+                        $clave => 'Por seguridad, las rutas de respaldo o reportes no pueden apuntar dentro del directorio público.',
+                    ]);
+                }
+            }
+
             ConfiguracionSistema::updateOrCreate(
                 ['clave' => $clave],
-                ['valor' => (string) ($valor ?? '')]
+                ['valor' => $valorStr]
             );
         }
 

@@ -48,6 +48,7 @@ const MainLayout: React.FC = () => {
 
   const abrirModalSalir = async () => {
     if (!turno) {
+      await api.post('/auth/logout').catch(() => {});
       setUsuario(null);
       return;
     }
@@ -75,6 +76,7 @@ const MainLayout: React.FC = () => {
 
       limpiarCarrito();
       setModalSalir(false);
+      await api.post('/auth/logout').catch(() => {});
       setTurno(null);
       setUsuario(null);
       setModuloActivo('ventas');

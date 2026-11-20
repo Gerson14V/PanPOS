@@ -33,7 +33,6 @@ class VentaController extends Controller
         $datos = $request->validate([
             'venta_en_espera_id' => 'nullable|exists:ventas,id',
             'turno_id' => 'required|exists:turnos_caja,id',
-            'usuario_id' => 'required|exists:usuarios,id',
             'cliente_id' => 'nullable|exists:clientes,id',
             'estado' => 'nullable|in:completada,en_espera',
             'items' => 'required|array|min:1',
@@ -48,6 +47,7 @@ class VentaController extends Controller
             'pagos.*.vuelto_entregado' => 'nullable|numeric|min:0',
         ]);
 
+        $datos['usuario_id'] = $request->user()->id;
         $venta = $this->ventaService->procesarVenta($datos);
         return response()->json($venta, 201);
     }
@@ -55,13 +55,12 @@ class VentaController extends Controller
     public function anular(Request $request, Venta $venta): JsonResponse
     {
         $datos = $request->validate([
-            'usuario_id' => 'required|exists:usuarios,id',
             'motivo_anulacion' => 'required|string|max:255',
         ]);
 
         $anulada = $this->ventaService->anularVenta(
             $venta,
-            (int) $datos['usuario_id'],
+            (int) $request->user()->id,
             $datos['motivo_anulacion']
         );
 

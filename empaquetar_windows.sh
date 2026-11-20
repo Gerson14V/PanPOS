@@ -61,7 +61,7 @@ mkdir -p "$DESTINO/app/storage/logs" \
 # comenta estas 4 líneas de abajo antes de correr el script)
 rm -f "$DESTINO/app/database/database.sqlite" "$DESTINO/app/database/database.sqlite-wal" "$DESTINO/app/database/database.sqlite-shm"
 touch "$DESTINO/app/database/database.sqlite"
-(cd "$DESTINO/app" && php artisan migrate --force && php artisan db:seed --force && php -r "\$pdo = new PDO('sqlite:database/database.sqlite'); \$pdo->exec(\"UPDATE configuracion_sistema SET valor = '' WHERE clave = 'ruta_respaldo_local'\");" && php artisan optimize:clear)
+(cd "$DESTINO/app" && php artisan key:generate --force && php artisan migrate --force && php artisan db:seed --force && php -r "\$pdo = new PDO('sqlite:database/database.sqlite'); \$pdo->exec(\"UPDATE configuracion_sistema SET valor = '' WHERE clave = 'ruta_respaldo_local'\");" && php artisan optimize:clear)
 
 # Quitar archivos de caché con rutas de Linux
 rm -f "$DESTINO/app/bootstrap/cache/"*.php

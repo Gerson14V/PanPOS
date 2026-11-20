@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api } from '../api/client';
+import { api, getAuthToken, setAuthToken } from '../api/client';
 import { Usuario, TurnoCaja, Producto, Departamento, Cliente, ItemCarrito } from '../types/models';
 
 interface PosContextType {
@@ -54,6 +54,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const setUsuario = (u: Usuario | null) => {
+    if (!u) {
+      setAuthToken(null);
+    }
     setUsuarioState(u);
   };
 
@@ -77,7 +80,29 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   useEffect(() => {
-    recargarCatalogos();
+    const inicializarSesion = async () => {
+      const token = getAuthToken();
+      if (token) {
+        try {
+          const meRes = await api.get('/auth/me');
+          setUsuarioState(meRes.data.usuario);
+          await recargarCatalogos();
+          return;
+        } catch {
+          setAuthToken(null);
+        }
+      }
+
+      try {
+        const pubRes = await api.get('/sistema/publico');
+        setConfiguracion(pubRes.data.configuracion || {});
+        setTurno(pubRes.data.turno_activo || null);
+      } catch (error) {
+        console.error('Error cargando estado público de PanPOS:', error);
+      }
+    };
+
+    inicializarSesion();
   }, []);
 
   const agregarAlCarrito = (prod: Producto, cantidad = 1): string | null => {

@@ -92,7 +92,6 @@ class ClienteController extends Controller
     {
         $datos = $request->validate([
             'turno_id' => 'required|exists:turnos_caja,id',
-            'usuario_id' => 'required|exists:usuarios,id',
             'tipo' => 'required|in:prestamo_cliente,abono_cliente',
             'metodo_pago' => 'required|in:efectivo,tarjeta,sinpe',
             'monto' => 'required|numeric|min:1',
@@ -100,6 +99,7 @@ class ClienteController extends Controller
         ]);
 
         $datos['cliente_id'] = $cliente->id;
+        $datos['usuario_id'] = $request->user()->id;
 
         $movimiento = $this->turnoCajaService->registrarMovimientoCaja($datos);
 

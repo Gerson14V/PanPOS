@@ -197,9 +197,22 @@ export const ModuloCorteReportes: React.FC = () => {
     }
   };
 
-  const descargarExcelCorte = () => {
-    const baseUrl = (api.defaults.baseURL || 'http://127.0.0.1:8000/api').replace(/\/$/, '');
-    window.open(`${baseUrl}/reportes/exportar-excel-diario`, '_blank');
+  const descargarExcelCorte = async () => {
+    try {
+      const res = await api.get('/reportes/exportar-excel-diario', { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/vnd.ms-excel;charset=UTF-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Ventas_Diarias_PanPOS.xls';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setMensaje({ tipo: 'success', texto: 'Excel diario actualizado y descargado correctamente.' });
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'No se pudo generar o descargar el Excel diario.' });
+    }
   };
 
   const mostrarCierreDeCajero = modoCorte === 'cajero' && !!turno && resumen && !resumen.sin_datos && resumen.turno?.estado === 'abierto';

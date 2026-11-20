@@ -1,10 +1,13 @@
 <?php
 
 $uri = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/');
-$publicPath = __DIR__ . DIRECTORY_SEPARATOR . 'public';
+$publicPath = realpath(__DIR__ . DIRECTORY_SEPARATOR . 'public');
 
-if ($uri !== '/' && file_exists($publicPath . $uri) && !is_dir($publicPath . $uri)) {
-    return false;
+if ($publicPath !== false && $uri !== '/') {
+    $requested = realpath($publicPath . DIRECTORY_SEPARATOR . ltrim($uri, '/\\'));
+    if ($requested !== false && str_starts_with($requested, $publicPath . DIRECTORY_SEPARATOR) && is_file($requested)) {
+        return false;
+    }
 }
 
-require_once $publicPath . DIRECTORY_SEPARATOR . 'index.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'index.php';

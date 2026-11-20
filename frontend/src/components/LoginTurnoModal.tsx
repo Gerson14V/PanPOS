@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
-import { api } from '../api/client';
+import { api, setAuthToken } from '../api/client';
 
 export const LoginTurnoModal: React.FC = () => {
   const { usuario, setUsuario, turno, setTurno, configuracion, carrito, recargarCatalogos } = usePos();
@@ -25,6 +25,7 @@ export const LoginTurnoModal: React.FC = () => {
     setCargando(true);
     try {
       const res = await api.post('/auth/login', { username, password });
+      setAuthToken(res.data.token);
       await recargarCatalogos();
       setUsuario(res.data.usuario);
       setPassword('');
