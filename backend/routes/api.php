@@ -32,9 +32,11 @@ Route::get('clientes/{cliente}/estado-cuenta', [ClienteController::class, 'estad
 Route::post('clientes/{cliente}/operacion-credito', [ClienteController::class, 'registrarOperacionCredito']);
 Route::apiResource('clientes', ClienteController::class)->only(['index', 'store', 'update', 'destroy']);
 
-// Turnos de Caja y Corte
+// Turnos de Caja y Corte (Cajero + Día Completo)
 Route::get('turnos', [TurnoCajaController::class, 'index']);
 Route::get('turnos/activo', [TurnoCajaController::class, 'turnoActivo']);
+Route::get('turnos/fechas-disponibles', [TurnoCajaController::class, 'fechasDisponibles']);
+Route::get('turnos/corte-dia', [TurnoCajaController::class, 'resumenDia']);
 Route::post('turnos/abrir', [TurnoCajaController::class, 'abrir']);
 Route::get('turnos/{turno}/resumen', [TurnoCajaController::class, 'resumen']);
 Route::post('turnos/{turno}/movimientos', [TurnoCajaController::class, 'registrarMovimiento']);
@@ -48,4 +50,5 @@ Route::post('ventas/{venta}/anular', [VentaController::class, 'anular']);
 
 // Reportes y Respaldos de Base de Datos
 Route::get('reportes/ventas-periodo', [ReporteBackupController::class, 'ventasPorPeriodo']);
+Route::get('reportes/exportar-excel-diario', [ReporteBackupController::class, 'exportarExcelDiario']);
 Route::post('sistema/backup', [ReporteBackupController::class, 'ejecutarBackupManual']);

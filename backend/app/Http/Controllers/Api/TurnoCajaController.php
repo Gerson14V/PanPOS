@@ -30,6 +30,20 @@ class TurnoCajaController extends Controller
         return response()->json($query->limit(90)->get());
     }
 
+    public function fechasDisponibles(): JsonResponse
+    {
+        return response()->json($this->turnoCajaService->obtenerFechasConTurnos());
+    }
+
+    public function resumenDia(Request $request): JsonResponse
+    {
+        $fecha = $request->date('fecha')
+            ? $request->date('fecha')->toDateString()
+            : now()->toDateString();
+
+        return response()->json($this->turnoCajaService->obtenerResumenDia($fecha));
+    }
+
     public function turnoActivo(): JsonResponse
     {
         $turno = TurnoCaja::with('usuario:id,nombre')

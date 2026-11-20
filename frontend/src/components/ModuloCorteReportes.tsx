@@ -18,18 +18,36 @@ const DENOMINACIONES_CR = [
 ];
 
 type VistaModulo = 'corte' | 'reportes';
+type ModoCorte = 'cajero' | 'dia';
 type TipoPeriodo = 'un_dia' | 'semana' | 'mes' | 'intervalo';
+
+interface FechaDisponible {
+  fecha: string;
+  cantidad_turnos: number;
+  cajeros: string[];
+  estado: 'abierto' | 'cerrado';
+}
+
+const formatearFechaCorta = (ymd: string): string => {
+  if (!ymd) return '';
+  return new Date(`${ymd}T12:00:00`).toLocaleDateString('es-CR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
 
 export const ModuloCorteReportes: React.FC = () => {
   const { turno, setTurno, setUsuario, limpiarCarrito, usuario } = usePos();
 
+  const hoyStr = fechaLocalISO();
   const [vista, setVista] = useState<VistaModulo>('corte');
   const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'info' | 'danger'; texto: string } | null>(null);
 
-  // Estados de Corte y Selector de Otros Días
-  const [historialTurnos, setHistorialTurnos] = useState<any[]>([]);
-  const [fechaFiltroTurnos, setFechaFiltroTurnos] = useState<string>('');
-  const [turnoVisualizadoId, setTurnoVisualizadoId] = useState<number | null>(turno?.id || null);
+  // Modos de Corte: "cajero" (Turno actual) o "dia" (Todos los turnos del día elegido)
+  const [modoCorte, setModoCorte] = useState<ModoCorte>(turno ? 'cajero' : 'dia');
+  const [fechaCorteDia, setFechaCorteDia] = useState<string>(hoyStr);
+  const [fechasDisponibles, setFechasDisponibles] = useState<FechaDisponible[]>([]);
   const [resumen, setResumen] = useState<any | null>(null);
 
   // Conteo de Billetes y Monedas (oculto por defecto hasta pulsar el botón inferior centrado)
@@ -40,7 +58,6 @@ export const ModuloCorteReportes: React.FC = () => {
   const [cerrando, setCerrando] = useState(false);
 
   // Estados de Reportes y Gráficos (Un Día Específico / Semana / Mes / Intervalo)
-  const hoyStr = fechaLocalISO();
   const [tipoPeriodo, setTipoPeriodo] = useState<TipoPeriodo>('un_dia');
   const [diaUnico, setDiaUnico] = useState<string>(hoyStr);
   const [desde, setDesde] = useState<string>(hoyStr);
@@ -48,25 +65,30 @@ export const ModuloCorteReportes: React.FC = () => {
   const [reporte, setReporte] = useState<any | null>(null);
   const [barraHover, setBarraHover] = useState<{ etiqueta: string; monto: number; cantidad: number } | null>(null);
 
-  const cargarHistorialTurnos = async (fecha = fechaFiltroTurnos) => {
+  const cargarFechasDisponibles = async () => {
     try {
-      const url = fecha ? `/turnos?fecha=${fecha}` : '/turnos';
-      const res = await api.get(url);
-      setHistorialTurnos(res.data);
-      if (res.data.length > 0 && fecha) {
-        setTurnoVisualizadoId(res.data[0].id);
-      }
+      const res = await api.get('/turnos/fechas-disponibles');
+      setFechasDisponibles(res.data);
     } catch {
-      setMensaje({ tipo: 'danger', texto: 'No se pudo cargar el historial de turnos.' });
+      setMensaje({ tipo: 'danger', texto: 'No se pudo cargar la lista de días con cortes.' });
     }
   };
 
-  const cargarDetalleTurno = async (idTurno: number) => {
+  const cargarCorteCajero = async (idTurno: number) => {
     try {
       const resCorte = await api.get(`/turnos/${idTurno}/resumen`);
       setResumen(resCorte.data);
     } catch {
-      setMensaje({ tipo: 'danger', texto: 'Error al cargar el resumen del turno.' });
+      setMensaje({ tipo: 'danger', texto: 'Error al cargar el corte del cajero.' });
+    }
+  };
+
+  const cargarCorteDia = async (fecha: string) => {
+    try {
+      const resCorte = await api.get(`/turnos/corte-dia?fecha=${fecha}`);
+      setResumen(resCorte.data);
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'Error al cargar el corte completo del día.' });
     }
   };
 
@@ -80,20 +102,21 @@ export const ModuloCorteReportes: React.FC = () => {
   };
 
   useEffect(() => {
-    cargarHistorialTurnos('');
+    cargarFechasDisponibles();
   }, [turno]);
 
   useEffect(() => {
-    if (turno && !turnoVisualizadoId) {
-      setTurnoVisualizadoId(turno.id);
+    if (vista !== 'corte') return;
+    if (modoCorte === 'cajero') {
+      if (turno) {
+        cargarCorteCajero(turno.id);
+      } else {
+        setModoCorte('dia');
+      }
+    } else {
+      cargarCorteDia(fechaCorteDia);
     }
-  }, [turno]);
-
-  useEffect(() => {
-    if (turnoVisualizadoId) {
-      cargarDetalleTurno(turnoVisualizadoId);
-    }
-  }, [turnoVisualizadoId]);
+  }, [vista, modoCorte, fechaCorteDia, turno]);
 
   useEffect(() => {
     if (vista === 'reportes') {
@@ -163,7 +186,7 @@ export const ModuloCorteReportes: React.FC = () => {
         total_efectivo_contado: efectivoContadoFinal,
         observaciones: observaciones || (hayDenominacionesLlenas ? 'Cierre con conteo de billetes y monedas' : ''),
       });
-      alert(`Turno #${turno.id} cerrado con éxito.\nRespaldo BD: ${res.data.respaldo.archivo}\nExcel diario actualizado en: ${res.data.excel_diario?.ruta || "Escritorio"}`);
+      alert(`Turno #${turno.id} cerrado con éxito.\nRespaldo BD: ${res.data.respaldo.archivo}\nExcel diario actualizado en: ${res.data.excel_diario?.ruta || 'Escritorio'}`);
       limpiarCarrito();
       setTurno(null);
       setUsuario(null);
@@ -175,12 +198,11 @@ export const ModuloCorteReportes: React.FC = () => {
   };
 
   const descargarExcelCorte = () => {
-    if (!turnoVisualizadoId) return;
     const baseUrl = (api.defaults.baseURL || 'http://127.0.0.1:8000/api').replace(/\/$/, '');
-    window.open(`${baseUrl}/turnos/${turnoVisualizadoId}/exportar-excel`, '_blank');
+    window.open(`${baseUrl}/reportes/exportar-excel-diario`, '_blank');
   };
 
-  const esTurnoActualAbierto = resumen?.turno?.estado === 'abierto' && resumen?.turno?.id === turno?.id;
+  const mostrarCierreDeCajero = modoCorte === 'cajero' && !!turno && resumen && !resumen.sin_datos && resumen.turno?.estado === 'abierto';
 
   const entradasLista = (resumen?.movimientos_caja || []).filter(
     (m: any) => m.tipo === 'entrada' || m.tipo === 'abono_cliente'
@@ -231,7 +253,7 @@ export const ModuloCorteReportes: React.FC = () => {
             className={`btn fw-bold ${vista === 'corte' ? 'btn-primary' : 'btn-outline-primary'}`}
             onClick={() => setVista('corte')}
           >
-            ✂️ Corte de Caja (Actual y Otros Días)
+            ✂️ Corte de Caja
           </button>
           <button
             className={`btn fw-bold ${vista === 'reportes' ? 'btn-primary' : 'btn-outline-primary'}`}
@@ -241,7 +263,7 @@ export const ModuloCorteReportes: React.FC = () => {
           </button>
         </div>
 
-        {vista === 'corte' && resumen && (
+        {vista === 'corte' && (
           <div className="d-flex flex-wrap gap-2">
             <button className="btn btn-outline-secondary fw-bold" onClick={() => window.print()}>
               🖨️ Imprimir Corte
@@ -254,7 +276,7 @@ export const ModuloCorteReportes: React.FC = () => {
       </div>
 
       {/* ===================================================================== */}
-      {/* VISTA 1: CORTE DE CAJA ESTILO ELEVENTA + BOTÓN INFERIOR CENTRADO      */}
+      {/* VISTA 1: CORTE DE CAJERO (TURNO) + CORTE DEL DÍA (TODOS LOS TURNOS)   */}
       {/* ===================================================================== */}
       {vista === 'corte' && (
         <>
@@ -263,82 +285,124 @@ export const ModuloCorteReportes: React.FC = () => {
               <div className="d-flex flex-wrap align-items-center gap-2">
                 {turno && (
                   <button
-                    className={`btn btn-sm fw-bold ${turnoVisualizadoId === turno.id ? 'btn-primary' : 'btn-outline-primary'}`}
+                    className={`btn btn-sm fw-bold ${modoCorte === 'cajero' ? 'btn-primary' : 'btn-outline-primary'}`}
                     onClick={() => {
-                      setFechaFiltroTurnos('');
-                      setTurnoVisualizadoId(turno.id);
-                      cargarHistorialTurnos('');
+                      setModoCorte('cajero');
                     }}
                   >
-                    ● Turno Actual (#{turno.id})
+                    👤 Corte de Cajero (Turno #{turno.id})
                   </button>
                 )}
+
+                <button
+                  className={`btn btn-sm fw-bold ${
+                    modoCorte === 'dia' && fechaCorteDia === hoyStr ? 'btn-primary' : 'btn-outline-primary'
+                  }`}
+                  onClick={() => {
+                    setFechaCorteDia(hoyStr);
+                    setModoCorte('dia');
+                    setMostrarConteo(false);
+                  }}
+                >
+                  📅 Corte del Día (Hoy)
+                </button>
 
                 <span className="small fw-bold text-muted ms-2">Ver corte de otro día:</span>
                 <input
                   type="date"
-                  className="form-control form-control-sm"
+                  className="form-control form-control-sm fw-semibold"
                   style={{ width: '155px' }}
-                  value={fechaFiltroTurnos}
+                  value={fechaCorteDia}
                   onChange={(e) => {
-                    setFechaFiltroTurnos(e.target.value);
-                    cargarHistorialTurnos(e.target.value);
+                    if (!e.target.value) return;
+                    setFechaCorteDia(e.target.value);
+                    setModoCorte('dia');
+                    setMostrarConteo(false);
                   }}
                 />
-                {fechaFiltroTurnos && (
-                  <button
-                    className="btn btn-sm btn-outline-secondary"
-                    onClick={() => {
-                      setFechaFiltroTurnos('');
-                      cargarHistorialTurnos('');
-                    }}
-                  >
-                    Todos
-                  </button>
-                )}
 
                 <select
                   className="form-select form-select-sm fw-semibold"
-                  style={{ width: '320px' }}
-                  value={turnoVisualizadoId || ''}
-                  onChange={(e) => setTurnoVisualizadoId(Number(e.target.value))}
+                  style={{ width: '280px' }}
+                  value={modoCorte === 'dia' ? fechaCorteDia : ''}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    setFechaCorteDia(e.target.value);
+                    setModoCorte('dia');
+                    setMostrarConteo(false);
+                  }}
                 >
-                  {historialTurnos.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      Turno #{t.id} — {new Date(t.fecha_apertura).toLocaleDateString()} {new Date(t.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {t.usuario?.nombre} ({t.estado === 'abierto' ? 'ABIERTO' : 'CERRADO'})
+                  <option value="">-- Días con cortes registrados --</option>
+                  {fechasDisponibles.map((f) => (
+                    <option key={f.fecha} value={f.fecha}>
+                      {formatearFechaCorta(f.fecha)} — {f.cantidad_turnos}{' '}
+                      {f.cantidad_turnos === 1 ? 'turno' : 'turnos'} ({f.estado === 'abierto' ? 'EN CURSO' : 'CERRADO'})
                     </option>
                   ))}
                 </select>
               </div>
 
-              {resumen && (
+              {resumen && !resumen.sin_datos && (
                 <span className={`badge fs-6 ${resumen.turno.estado === 'abierto' ? 'bg-success' : 'bg-secondary'}`}>
-                  {resumen.turno.estado === 'abierto' ? 'TURNO EN CURSO' : 'TURNO CERRADO'}
+                  {resumen.es_corte_dia
+                    ? resumen.turno.estado === 'abierto'
+                      ? 'DÍA EN CURSO'
+                      : 'DÍA CERRADO'
+                    : 'TURNO EN CURSO'}
                 </span>
               )}
             </div>
           </div>
 
+          {/* Mensaje si se eligió una fecha sin turnos */}
+          {resumen?.sin_datos && (
+            <div className="card shadow-sm p-5 text-center text-muted mb-3">
+              <h5 className="fw-bold mb-1">Sin movimientos el {formatearFechaCorta(resumen.fecha)}</h5>
+              <p className="mb-0 small">No se registraron turnos ni ventas en esta fecha.</p>
+            </div>
+          )}
+
           {/* Hoja Limpia de Corte Estilo Eleventa */}
-          {resumen && (
+          {resumen && !resumen.sin_datos && (
             <div className="card shadow-sm mb-3">
-              <div className="card-header bg-body-tertiary py-3 px-4 border-bottom d-flex flex-wrap justify-content-between align-items-center">
+              <div className="card-header bg-body-tertiary py-3 px-4 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div>
-                  <h5 className="fw-bold mb-0 text-primary">
-                    Corte de {resumen.turno.usuario?.nombre} del{' '}
-                    {new Date(resumen.turno.fecha_apertura).toLocaleDateString('es-CR', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
-                  </h5>
-                  <small className="text-muted">
-                    De {new Date(resumen.turno.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
-                    a{' '}
-                    {resumen.turno.fecha_cierre
-                      ? new Date(resumen.turno.fecha_cierre).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : 'la hora actual (Turno Actual)'}
-                  </small>
+                  {resumen.es_corte_dia ? (
+                    <>
+                      <h5 className="fw-bold mb-0 text-primary">
+                        Corte del Día — {formatearFechaCorta(resumen.fecha)}
+                      </h5>
+                      <small className="text-muted">
+                        Todos los turnos del día ({resumen.cantidad_turnos}{' '}
+                        {resumen.cantidad_turnos === 1 ? 'turno' : 'turnos'}) • Cajeros:{' '}
+                        <strong>{resumen.cajeros?.join(', ') || 'N/A'}</strong> • De{' '}
+                        {new Date(resumen.turno.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
+                        a{' '}
+                        {resumen.turno.fecha_cierre
+                          ? new Date(resumen.turno.fecha_cierre).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : 'la hora actual'}
+                      </small>
+                    </>
+                  ) : (
+                    <>
+                      <h5 className="fw-bold mb-0 text-primary">
+                        Corte de Cajero: {resumen.turno.usuario?.nombre} del{' '}
+                        {new Date(resumen.turno.fecha_apertura).toLocaleDateString('es-CR', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </h5>
+                      <small className="text-muted">
+                        Turno #{resumen.turno.id} • De{' '}
+                        {new Date(resumen.turno.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
+                        a{' '}
+                        {resumen.turno.fecha_cierre
+                          ? new Date(resumen.turno.fecha_cierre).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : 'la hora actual (Turno Actual)'}
+                      </small>
+                    </>
+                  )}
                 </div>
 
                 {resumen.turno.estado === 'cerrado' && resumen.turno.total_efectivo_contado !== null && (
@@ -517,8 +581,8 @@ export const ModuloCorteReportes: React.FC = () => {
             </div>
           )}
 
-          {/* Botón Contar Billetes y Cerrar Turno centrado abajo */}
-          {esTurnoActualAbierto && (
+          {/* Botón Contar Billetes y Cerrar Turno centrado abajo (en Corte de Cajero) */}
+          {mostrarCierreDeCajero && (
             <div className="d-flex justify-content-center my-3">
               <button
                 className={`btn btn-lg px-5 fw-bold shadow-sm ${mostrarConteo ? 'btn-secondary' : 'btn-danger'}`}
@@ -530,7 +594,7 @@ export const ModuloCorteReportes: React.FC = () => {
           )}
 
           {/* Panel Desplegable de Conteo de Billetes y Monedas */}
-          {esTurnoActualAbierto && mostrarConteo && (
+          {mostrarCierreDeCajero && mostrarConteo && (
             <div className="card shadow-sm mb-3 border-primary">
               <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <span className="fw-bold">💵 Conteo de Billetes y Monedas (Costa Rica) y Cierre de Turno</span>

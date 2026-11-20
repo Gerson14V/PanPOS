@@ -227,6 +227,16 @@ class ReporteBackupController extends Controller
         ]);
     }
 
+    public function exportarExcelDiario(): Response
+    {
+        $excel = $this->reporteExcelDiarioService->actualizarArchivoMaestro();
+
+        return response($excel['html'], 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$excel['archivo']}\"",
+        ]);
+    }
+
     public function exportarCorteExcel(TurnoCaja $turno): Response
     {
         $excel = $this->reporteExcelDiarioService->actualizarArchivoMaestro();
