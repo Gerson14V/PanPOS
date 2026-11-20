@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ConfiguracionSistema;
 use App\Models\TurnoCaja;
 use App\Models\Venta;
 use Carbon\Carbon;
@@ -12,6 +13,17 @@ class ReporteExcelDiarioService
 
     public function obtenerRutaArchivo(): string
     {
+        $rutaConfig = trim((string) ConfiguracionSistema::where('clave', 'ruta_excel_maestro')->value('valor'));
+        if ($rutaConfig !== '') {
+            if (is_dir($rutaConfig)) {
+                return rtrim($rutaConfig, DIRECTORY_SEPARATOR) . '/Ventas_Diarias_PanPOS.xls';
+            }
+            $dirPadre = dirname($rutaConfig);
+            if (is_dir($dirPadre) && is_writable($dirPadre)) {
+                return $rutaConfig;
+            }
+        }
+
         $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? '');
         if (!$home && function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
             $info = posix_getpwuid(posix_geteuid());
@@ -36,7 +48,12 @@ class ReporteExcelDiarioService
     {
         $turnos = TurnoCaja::orderBy('fecha_apertura', 'asc')->get();
 
-        // Agrupar turnos por fecha local (YYYY-MM-DD)
+        // Una sola consulta agrupada por turno_id (evita consultas N+1)
+        $ventasPorTurno = Venta::where('estado', 'completada')
+            ->selectRaw('turno_id, SUM(total) as total')
+            ->groupBy('turno_id')
+            ->pluck('total', 'turno_id');
+
         $porFecha = $turnos->groupBy(function ($t) {
             return Carbon::parse($t->fecha_apertura)->format('Y-m-d');
         });
@@ -45,12 +62,10 @@ class ReporteExcelDiarioService
         $granTotalVentas = 0.0;
 
         foreach ($porFecha as $fechaYmd => $turnosDelDia) {
-            $turnosIds = $turnosDelDia->pluck('id');
-
-            $ventasDia = (float) Venta::whereIn('turno_id', $turnosIds)
-                ->where('estado', 'completada')
-                ->sum('total');
-
+            $ventasDia = 0.0;
+            foreach ($turnosDelDia as $t) {
+                $ventasDia += (float) ($ventasPorTurno[$t->id] ?? 0);
+            }
             $granTotalVentas += $ventasDia;
 
             $turnosCerrados = $turnosDelDia->where('estado', 'cerrado');

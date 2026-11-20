@@ -23,6 +23,8 @@ export const ModuloClientes: React.FC = () => {
   const [conceptoOp, setConceptoOp] = useState('');
   const [alerta, setAlerta] = useState<{ tipo: 'success' | 'danger'; texto: string } | null>(null);
   const [errorModal, setErrorModal] = useState<string | null>(null);
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
+  const [procesandoOp, setProcesandoOp] = useState(false);
 
   const cargarEfectivoCaja = async () => {
     if (!turno) return;
@@ -47,9 +49,13 @@ export const ModuloClientes: React.FC = () => {
 
   const verEstadoCuenta = async (cliente: Cliente) => {
     setClienteSeleccionado(cliente);
-    const res = await api.get(`/clientes/${cliente.id}/estado-cuenta`);
-    setDetalleCuenta(res.data.cliente ? res.data : null);
-    setClienteSeleccionado(res.data.cliente);
+    try {
+      const res = await api.get(`/clientes/${cliente.id}/estado-cuenta`);
+      setDetalleCuenta(res.data.cliente ? res.data : null);
+      setClienteSeleccionado(res.data.cliente);
+    } catch {
+      setAlerta({ tipo: 'danger', texto: 'No se pudo cargar el estado de cuenta del cliente.' });
+    }
   };
 
   const eliminarCliente = async (cliente: Cliente, e?: React.MouseEvent) => {
@@ -86,13 +92,21 @@ export const ModuloClientes: React.FC = () => {
 
   const guardarCliente = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post('/clientes', { nombre, telefono, notas });
-    setNombre('');
-    setTelefono('');
-    setNotas('');
-    setModalCliente(false);
-    await recargarCatalogos();
-    setAlerta({ tipo: 'success', texto: 'Cliente registrado correctamente.' });
+    if (guardandoCliente) return;
+    setGuardandoCliente(true);
+    try {
+      await api.post('/clientes', { nombre, telefono, notas });
+      setNombre('');
+      setTelefono('');
+      setNotas('');
+      setModalCliente(false);
+      await recargarCatalogos();
+      setAlerta({ tipo: 'success', texto: 'Cliente registrado correctamente.' });
+    } catch (err: any) {
+      setAlerta({ tipo: 'danger', texto: err.response?.data?.message || 'No se pudo registrar el cliente.' });
+    } finally {
+      setGuardandoCliente(false);
+    }
   };
 
   const abrirModalOperacion = async (tipo: 'abono_cliente' | 'prestamo_cliente') => {
@@ -106,7 +120,7 @@ export const ModuloClientes: React.FC = () => {
 
   const registrarOperacion = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clienteSeleccionado || !turno || !usuario || !modalOperacion) return;
+    if (procesandoOp || !clienteSeleccionado || !turno || !usuario || !modalOperacion) return;
     setErrorModal(null);
 
     const monto = Number(montoOp);
@@ -134,6 +148,7 @@ export const ModuloClientes: React.FC = () => {
       }
     }
 
+    setProcesandoOp(true);
     try {
       await api.post(`/clientes/${clienteSeleccionado.id}/operacion-credito`, {
         turno_id: turno.id,
@@ -155,6 +170,8 @@ export const ModuloClientes: React.FC = () => {
         err.response?.data?.message ||
         'No se pudo procesar la operación.';
       setErrorModal(`⚠️ ${msg}`);
+    } finally {
+      setProcesandoOp(false);
     }
   };
 
@@ -365,7 +382,7 @@ export const ModuloClientes: React.FC = () => {
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="submit" className="btn btn-primary w-100 fw-bold">Guardar Cliente</button>
+                <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={guardandoCliente}>{guardandoCliente ? 'Guardando...' : 'Guardar Cliente'}</button>
               </div>
             </form>
           </div>
@@ -449,8 +466,8 @@ export const ModuloClientes: React.FC = () => {
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="submit" className="btn btn-success w-100 fw-bold btn-lg">
-                  Confirmar Operación
+                <button type="submit" className="btn btn-success w-100 fw-bold btn-lg" disabled={procesandoOp}>
+                  {procesandoOp ? 'Registrando...' : 'Confirmar Operación'}
                 </button>
               </div>
             </form>

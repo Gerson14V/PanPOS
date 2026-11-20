@@ -24,6 +24,10 @@ const MainLayout: React.FC = () => {
 
   useEffect(() => {
     const handleNavKeys = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && modalSalir && !cerrandoCaja) {
+        setModalSalir(false);
+        return;
+      }
       if (e.key === 'F1') {
         e.preventDefault();
         setModuloActivo('ventas');
@@ -40,7 +44,7 @@ const MainLayout: React.FC = () => {
     };
     window.addEventListener('keydown', handleNavKeys);
     return () => window.removeEventListener('keydown', handleNavKeys);
-  }, [clientesVisible]);
+  }, [clientesVisible, modalSalir, cerrandoCaja]);
 
   const abrirModalSalir = async () => {
     if (!turno) {
@@ -55,6 +59,7 @@ const MainLayout: React.FC = () => {
       setModalSalir(true);
     } catch (e) {
       console.error(e);
+      alert('No se pudo conectar con el servidor para obtener el resumen de caja.');
     }
   };
 
@@ -202,6 +207,9 @@ const MainLayout: React.FC = () => {
                     className="form-control form-control-lg fw-bold fs-4"
                     placeholder="Digite el monto contado en gaveta"
                     value={efectivoContadoSalir}
+                    onKeyDown={(e) => {
+                      if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault();
+                    }}
                     onChange={(e) => setEfectivoContadoSalir(e.target.value)}
                     autoFocus
                     required

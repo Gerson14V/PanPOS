@@ -25,30 +25,11 @@ class VentaController extends Controller
             $query->where('estado', $request->string('estado'));
         }
 
-        return response()->json($query->limit(150)->get());
+        return response()->json($query->limit(250)->get());
     }
 
     public function store(Request $request): JsonResponse
     {
-
-        // VALIDACION_STOCK_PANPOS: bloquear ventas sin existencias o cantidades <= 0
-        if ($request->input('estado', 'completada') === 'completada') {
-            foreach ($request->input('items', []) as $item) {
-                $cant = (int) ($item['cantidad'] ?? 0);
-                if ($cant <= 0) {
-                    return response()->json(['message' => 'La cantidad de cada producto debe ser mayor a 0.'], 422);
-                }
-                if (!empty($item['producto_id'])) {
-                    $prod = \App\Models\Producto::find($item['producto_id']);
-                    if ($prod && $prod->controlar_stock && $prod->stock_actual < $cant) {
-                        return response()->json([
-                            'message' => "Sin existencias suficientes de \"{$prod->nombre}\". Disponible: {$prod->stock_actual}, solicitado: {$cant}.",
-                        ], 422);
-                    }
-                }
-            }
-        }
-
         $datos = $request->validate([
             'venta_en_espera_id' => 'nullable|exists:ventas,id',
             'turno_id' => 'required|exists:turnos_caja,id',
@@ -80,7 +61,7 @@ class VentaController extends Controller
 
         $anulada = $this->ventaService->anularVenta(
             $venta,
-            $datos['usuario_id'],
+            (int) $datos['usuario_id'],
             $datos['motivo_anulacion']
         );
 

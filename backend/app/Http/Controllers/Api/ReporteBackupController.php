@@ -27,23 +27,33 @@ class ReporteBackupController extends Controller
         $desde = $request->date('desde') ? $request->date('desde')->startOfDay() : now()->startOfDay();
         $hasta = $request->date('hasta') ? $request->date('hasta')->endOfDay() : now()->endOfDay();
 
-        $ventasIds = Venta::where('estado', 'completada')
-            ->whereBetween('created_at', [$desde, $hasta])
-            ->pluck('id');
+        if ($desde->gt($hasta)) {
+            [$desde, $hasta] = [$hasta->copy()->startOfDay(), $desde->copy()->endOfDay()];
+        }
 
-        $totalVentas = (float) Venta::whereIn('id', $ventasIds)->sum('total');
-        $numeroVentas = $ventasIds->count();
+        $resumenVentas = DB::table('ventas')
+            ->where('estado', 'completada')
+            ->whereBetween('created_at', [$desde, $hasta])
+            ->selectRaw('COUNT(id) as numero_ventas, COALESCE(SUM(total), 0) as total_ventas')
+            ->first();
+
+        $totalVentas = (float) ($resumenVentas->total_ventas ?? 0);
+        $numeroVentas = (int) ($resumenVentas->numero_ventas ?? 0);
 
         $pagosPorMetodo = DB::table('pagos_venta')
-            ->whereIn('venta_id', $ventasIds)
-            ->selectRaw('metodo_pago, SUM(monto) as total')
-            ->groupBy('metodo_pago')
+            ->join('ventas', 'pagos_venta.venta_id', '=', 'ventas.id')
+            ->where('ventas.estado', 'completada')
+            ->whereBetween('ventas.created_at', [$desde, $hasta])
+            ->selectRaw('pagos_venta.metodo_pago, SUM(pagos_venta.monto) as total')
+            ->groupBy('pagos_venta.metodo_pago')
             ->pluck('total', 'metodo_pago');
 
         $porDepartamento = DB::table('detalle_ventas')
+            ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
             ->leftJoin('productos', 'detalle_ventas.producto_id', '=', 'productos.id')
             ->leftJoin('departamentos', 'productos.departamento_id', '=', 'departamentos.id')
-            ->whereIn('detalle_ventas.venta_id', $ventasIds)
+            ->where('ventas.estado', 'completada')
+            ->whereBetween('ventas.created_at', [$desde, $hasta])
             ->selectRaw("
                 COALESCE(departamentos.nombre, 'Artículo Común') as departamento,
                 SUM(detalle_ventas.cantidad) as unidades_vendidas,
@@ -55,22 +65,22 @@ class ReporteBackupController extends Controller
             ->orderByDesc('unidades_vendidas')
             ->get();
 
-        // Ventas agrupadas por producto_id en el período
         $ventasPorProducto = DB::table('detalle_ventas')
-            ->whereIn('venta_id', $ventasIds)
-            ->whereNotNull('producto_id')
+            ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
+            ->where('ventas.estado', 'completada')
+            ->whereBetween('ventas.created_at', [$desde, $hasta])
+            ->whereNotNull('detalle_ventas.producto_id')
             ->selectRaw("
-                producto_id,
-                SUM(cantidad) as unidades_vendidas,
-                SUM(subtotal) as total_ventas,
-                SUM(cantidad * costo_unitario_historico) as costo_total,
-                SUM(subtotal - (cantidad * costo_unitario_historico)) as ganancia
+                detalle_ventas.producto_id,
+                SUM(detalle_ventas.cantidad) as unidades_vendidas,
+                SUM(detalle_ventas.subtotal) as total_ventas,
+                SUM(detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico) as costo_total,
+                SUM(detalle_ventas.subtotal - (detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico)) as ganancia
             ")
-            ->groupBy('producto_id')
+            ->groupBy('detalle_ventas.producto_id')
             ->get()
             ->keyBy('producto_id');
 
-        // Construir ranking completo por proveedor con TODOS los productos activos de cada uno
         $departamentosActivos = Departamento::where('activo', true)
             ->with(['productos' => function ($q) {
                 $q->where('activo', true)->orderBy('nombre');
@@ -113,18 +123,19 @@ class ReporteBackupController extends Controller
             ['departamento', 'asc'],
         ])->values();
 
-        // Incluir artículos comunes si hubo ventas sin producto asociado
         $articulosComunes = DB::table('detalle_ventas')
-            ->whereIn('venta_id', $ventasIds)
-            ->whereNull('producto_id')
+            ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
+            ->where('ventas.estado', 'completada')
+            ->whereBetween('ventas.created_at', [$desde, $hasta])
+            ->whereNull('detalle_ventas.producto_id')
             ->selectRaw("
-                descripcion_producto as nombre,
-                SUM(cantidad) as unidades_vendidas,
-                SUM(subtotal) as total_ventas,
-                SUM(cantidad * costo_unitario_historico) as costo_total,
-                SUM(subtotal - (cantidad * costo_unitario_historico)) as ganancia
+                detalle_ventas.descripcion_producto as nombre,
+                SUM(detalle_ventas.cantidad) as unidades_vendidas,
+                SUM(detalle_ventas.subtotal) as total_ventas,
+                SUM(detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico) as costo_total,
+                SUM(detalle_ventas.subtotal - (detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico)) as ganancia
             ")
-            ->groupBy('descripcion_producto')
+            ->groupBy('detalle_ventas.descripcion_producto')
             ->orderByDesc('unidades_vendidas')
             ->get();
 
@@ -155,39 +166,41 @@ class ReporteBackupController extends Controller
         }
 
         $topProductos = DB::table('detalle_ventas')
-            ->whereIn('venta_id', $ventasIds)
+            ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
+            ->where('ventas.estado', 'completada')
+            ->whereBetween('ventas.created_at', [$desde, $hasta])
             ->selectRaw("
-                descripcion_producto as producto,
-                SUM(cantidad) as unidades,
-                SUM(subtotal) as total_ventas,
-                SUM(subtotal - (cantidad * costo_unitario_historico)) as ganancia
+                detalle_ventas.descripcion_producto as producto,
+                SUM(detalle_ventas.cantidad) as unidades,
+                SUM(detalle_ventas.subtotal) as total_ventas,
+                SUM(detalle_ventas.subtotal - (detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico)) as ganancia
             ")
-            ->groupBy('descripcion_producto')
+            ->groupBy('detalle_ventas.descripcion_producto')
             ->orderByDesc('unidades')
             ->limit(10)
             ->get();
 
         $ventasPorDia = DB::table('ventas')
-            ->whereIn('id', $ventasIds)
+            ->where('estado', 'completada')
+            ->whereBetween('created_at', [$desde, $hasta])
             ->selectRaw("DATE(created_at) as fecha, SUM(total) as total_ventas, COUNT(id) as cantidad")
             ->groupBy('fecha')
             ->orderBy('fecha')
             ->get();
 
         $ventasPorHora = DB::table('ventas')
-            ->whereIn('id', $ventasIds)
+            ->where('estado', 'completada')
+            ->whereBetween('created_at', [$desde, $hasta])
             ->selectRaw("strftime('%H', created_at) as hora, SUM(total) as total_ventas, COUNT(id) as cantidad")
             ->groupBy('hora')
             ->orderBy('hora')
             ->get();
 
-        $anulacionesCount = Venta::where('estado', 'anulada')
+        $anulaciones = DB::table('ventas')
+            ->where('estado', 'anulada')
             ->whereBetween('created_at', [$desde, $hasta])
-            ->count();
-
-        $anulacionesMonto = (float) Venta::where('estado', 'anulada')
-            ->whereBetween('created_at', [$desde, $hasta])
-            ->sum('total');
+            ->selectRaw('COUNT(id) as cantidad, COALESCE(SUM(total), 0) as monto')
+            ->first();
 
         return response()->json([
             'desde' => $desde->toDateString(),
@@ -208,13 +221,13 @@ class ReporteBackupController extends Controller
             'ranking_proveedores' => $rankingProveedores,
             'top_productos' => $topProductos,
             'anulaciones' => [
-                'cantidad' => $anulacionesCount,
-                'monto' => round($anulacionesMonto, 2),
+                'cantidad' => (int) ($anulaciones->cantidad ?? 0),
+                'monto' => round((float) ($anulaciones->monto ?? 0), 2),
             ],
         ]);
     }
 
-        public function exportarCorteExcel(TurnoCaja $turno): Response
+    public function exportarCorteExcel(TurnoCaja $turno): Response
     {
         $excel = $this->reporteExcelDiarioService->actualizarArchivoMaestro();
 

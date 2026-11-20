@@ -16,6 +16,7 @@ interface PosContextType {
   agregarArticuloComun: (descripcion: string, precio: number, cantidad: number) => void;
   cambiarCantidadCarrito: (uid: string, nuevaCantidad: number) => string | null;
   eliminarDelCarrito: (uid: string) => void;
+  reemplazarCarrito: (items: ItemCarrito[]) => void;
   limpiarCarrito: () => void;
   recargarCatalogos: () => Promise<void>;
 }
@@ -23,6 +24,8 @@ interface PosContextType {
 const PosContext = createContext<PosContextType | undefined>(undefined);
 
 const STORAGE_CARRITO_KEY = 'panpos_carrito_respaldo';
+let contadorUid = 0;
+const generarUid = (prefijo: string | number) => `${prefijo}-${Date.now()}-${++contadorUid}`;
 
 export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [usuario, setUsuarioState] = useState<Usuario | null>(null);
@@ -112,7 +115,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return [
         ...prev,
         {
-          uid: `${prod.id}-${Date.now()}`,
+          uid: generarUid(prod.id),
           producto_id: prod.id,
           codigo_barras: prod.codigo_barras,
           descripcion_producto: prod.nombre,
@@ -133,7 +136,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCarrito((prev) => [
       ...prev,
       {
-        uid: `comun-${Date.now()}`,
+        uid: generarUid('comun'),
         producto_id: null,
         codigo_barras: 'COMUN',
         descripcion_producto: descripcion,
@@ -183,6 +186,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCarrito((prev) => prev.filter((i) => i.uid !== uid));
   };
 
+  const reemplazarCarrito = (items: ItemCarrito[]) => {
+    setCarrito(items);
+  };
+
   const limpiarCarrito = () => {
     setCarrito([]);
     localStorage.removeItem(STORAGE_CARRITO_KEY);
@@ -204,6 +211,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         agregarArticuloComun,
         cambiarCantidadCarrito,
         eliminarDelCarrito,
+        reemplazarCarrito,
         limpiarCarrito,
         recargarCatalogos,
       }}

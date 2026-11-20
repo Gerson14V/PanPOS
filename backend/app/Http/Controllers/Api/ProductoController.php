@@ -20,7 +20,7 @@ class ProductoController extends Controller
 
         if ($request->boolean('bajo_stock')) {
             $query->where('controlar_stock', true)
-                  ->whereColumn('stock_actual', '<=', 'stock_minimo');
+                  ->where('stock_actual', '<=', 0);
         }
 
         return response()->json($query->orderBy('nombre')->get());
@@ -48,22 +48,32 @@ class ProductoController extends Controller
             'usuario_id' => 'nullable|exists:usuarios,id',
         ]);
 
-        $stockInicial = (int) ($datos['stock_actual'] ?? 0);
-        $datos['stock_actual'] = 0;
+        $producto = DB::transaction(function () use ($datos) {
+            $stockInicial = max(0, (int) ($datos['stock_actual'] ?? 0));
+            $usuarioId = $datos['usuario_id'] ?? null;
+            unset($datos['usuario_id']);
 
-        $producto = Producto::create($datos);
+            $datos['stock_minimo'] = 0;
+            $datos['stock_actual'] = ($datos['controlar_stock'] && $stockInicial > 0 && empty($usuarioId))
+                ? $stockInicial
+                : 0;
 
-        if ($producto->controlar_stock && $stockInicial > 0 && !empty($datos['usuario_id'])) {
-            $this->inventarioService->registrarMovimiento(
-                $producto,
-                $datos['usuario_id'],
-                'entrada',
-                $stockInicial,
-                'Inventario inicial al crear producto'
-            );
-        }
+            $nuevo = Producto::create($datos);
 
-        return response()->json($producto->load('departamento'), 201);
+            if ($nuevo->controlar_stock && $stockInicial > 0 && !empty($usuarioId)) {
+                $this->inventarioService->registrarMovimiento(
+                    $nuevo,
+                    (int) $usuarioId,
+                    'entrada',
+                    $stockInicial,
+                    'Inventario inicial al crear producto'
+                );
+            }
+
+            return $nuevo->fresh('departamento');
+        });
+
+        return response()->json($producto, 201);
     }
 
     public function update(Request $request, Producto $producto): JsonResponse
@@ -89,7 +99,6 @@ class ProductoController extends Controller
         $tieneVentas = DB::table('detalle_ventas')->where('producto_id', $producto->id)->exists();
 
         if ($tieneVentas) {
-            // Liberamos el código de barras para que pueda reutilizarse si lo desean y ocultamos del catálogo
             $producto->update([
                 'activo' => false,
                 'mostrar_boton_rapido' => false,
@@ -112,28 +121,16 @@ class ProductoController extends Controller
             'motivo' => 'nullable|string|max:255',
         ]);
 
-        
-        // VALIDACION_STOCK_NO_NEGATIVO: el stock nunca puede quedar por debajo de 0
-        if ($producto->controlar_stock) {
-            $delta = $datos['tipo'] === 'merma' ? -abs((int) $datos['cantidad']) : (int) $datos['cantidad'];
-            if (($producto->stock_actual + $delta) < 0) {
-                return response()->json([
-                    'message' => "El inventario de \"{$producto->nombre}\" no puede quedar negativo (Existencia actual: {$producto->stock_actual}).",
-                ], 422);
-            }
-        }
-
-        $movimiento = $this->inventarioService->registrarMovimiento(
+        $productoActualizado = $this->inventarioService->registrarMovimiento(
             $producto,
-            $datos['usuario_id'],
+            (int) $datos['usuario_id'],
             $datos['tipo'],
-            $datos['cantidad'],
+            (int) $datos['cantidad'],
             $datos['motivo'] ?? null
         );
 
         return response()->json([
-            'producto' => $producto->fresh('departamento'),
-            'movimiento' => $movimiento,
+            'producto' => $productoActualizado,
         ]);
     }
 

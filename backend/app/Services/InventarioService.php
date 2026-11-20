@@ -5,9 +5,15 @@ namespace App\Services;
 use App\Models\MovimientoInventario;
 use App\Models\Producto;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class InventarioService
 {
+    public function sugerirCodigoCorto(): ?string
+    {
+        return Producto::siguienteCodigoCortoDisponible();
+    }
+
     public function registrarMovimiento(
         Producto $producto,
         int $usuarioId,
@@ -16,7 +22,8 @@ class InventarioService
         ?string $motivo = null
     ): Producto {
         return DB::transaction(function () use ($producto, $usuarioId, $tipo, $cantidad, $motivo) {
-            $stockAnterior = $producto->stock_actual;
+            $prodBloqueado = Producto::lockForUpdate()->findOrFail($producto->id);
+            $stockAnterior = (int) $prodBloqueado->stock_actual;
 
             $diferencia = match ($tipo) {
                 'entrada', 'anulacion' => abs($cantidad),
@@ -26,19 +33,25 @@ class InventarioService
 
             $stockNuevo = $stockAnterior + $diferencia;
 
-            $producto->update(['stock_actual' => $stockNuevo]);
+            if ($prodBloqueado->controlar_stock && $stockNuevo < 0) {
+                throw ValidationException::withMessages([
+                    'stock' => "El inventario de \"{$prodBloqueado->nombre}\" no puede quedar negativo (Existencia actual: {$stockAnterior}).",
+                ]);
+            }
+
+            $prodBloqueado->update(['stock_actual' => max(0, $stockNuevo)]);
 
             MovimientoInventario::create([
-                'producto_id' => $producto->id,
+                'producto_id' => $prodBloqueado->id,
                 'usuario_id' => $usuarioId,
                 'tipo' => $tipo,
                 'cantidad' => $diferencia,
                 'stock_anterior' => $stockAnterior,
-                'stock_nuevo' => $stockNuevo,
+                'stock_nuevo' => max(0, $stockNuevo),
                 'motivo' => $motivo,
             ]);
 
-            return $producto->fresh('departamento');
+            return $prodBloqueado->fresh('departamento');
         });
     }
 }

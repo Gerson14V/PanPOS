@@ -6,6 +6,7 @@ use App\Models\Cliente;
 use App\Models\DetalleVenta;
 use App\Models\PagoVenta;
 use App\Models\Producto;
+use App\Models\TurnoCaja;
 use App\Models\Venta;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -19,9 +20,20 @@ class VentaService
         return DB::transaction(function () use ($datos) {
             $estado = $datos['estado'] ?? 'completada';
 
-            // Si viene de un ticket en espera previo, lo actualizamos; si no, generamos consecutivo
+            $turno = TurnoCaja::lockForUpdate()->findOrFail($datos['turno_id']);
+            if ($turno->estado !== 'abierto') {
+                throw ValidationException::withMessages([
+                    'turno_id' => 'El turno de caja se encuentra cerrado. Debe abrir un turno nuevo para vender.',
+                ]);
+            }
+
             if (!empty($datos['venta_en_espera_id'])) {
                 $venta = Venta::lockForUpdate()->findOrFail($datos['venta_en_espera_id']);
+                if ($venta->estado !== 'en_espera') {
+                    throw ValidationException::withMessages([
+                        'venta_en_espera_id' => 'Este ticket ya no se encuentra en espera.',
+                    ]);
+                }
                 $venta->detalles()->delete();
                 $venta->pagos()->delete();
                 $numeroTicket = $venta->numero_ticket;
@@ -31,19 +43,32 @@ class VentaService
                 $venta = new Venta();
             }
 
-            $totalCalculado = 0;
+            $totalCalculado = 0.0;
             $detallesPreparados = [];
+            $productosBloqueados = [];
+            $cantidadesPorProducto = [];
 
             foreach ($datos['items'] as $item) {
-                $producto = null;
-                $costoHistorico = 0;
-
-                if (!empty($item['producto_id'])) {
-                    $producto = Producto::lockForUpdate()->findOrFail($item['producto_id']);
-                    $costoHistorico = (float) $producto->precio_compra;
+                $cantidad = (int) $item['cantidad'];
+                if ($cantidad <= 0) {
+                    throw ValidationException::withMessages([
+                        'items' => 'La cantidad de cada producto debe ser mayor a 0.',
+                    ]);
                 }
 
-                $cantidad = (int) $item['cantidad'];
+                $producto = null;
+                $costoHistorico = 0.0;
+
+                if (!empty($item['producto_id'])) {
+                    $prodId = (int) $item['producto_id'];
+                    if (!isset($productosBloqueados[$prodId])) {
+                        $productosBloqueados[$prodId] = Producto::lockForUpdate()->findOrFail($prodId);
+                    }
+                    $producto = $productosBloqueados[$prodId];
+                    $costoHistorico = (float) $producto->precio_compra;
+                    $cantidadesPorProducto[$prodId] = ($cantidadesPorProducto[$prodId] ?? 0) + $cantidad;
+                }
+
                 $precioUnitario = (float) $item['precio_unitario'];
                 $subtotal = round($cantidad * $precioUnitario, 2);
                 $totalCalculado += $subtotal;
@@ -58,16 +83,27 @@ class VentaService
                 ];
             }
 
+            // Validación atómica de existencias agrupadas por producto
+            if ($estado === 'completada') {
+                foreach ($cantidadesPorProducto as $prodId => $cantTotal) {
+                    $prod = $productosBloqueados[$prodId];
+                    if ($prod->controlar_stock && (int) $prod->stock_actual < $cantTotal) {
+                        throw ValidationException::withMessages([
+                            'items' => "Sin existencias suficientes de \"{$prod->nombre}\". Disponible: {$prod->stock_actual}, solicitado: {$cantTotal}.",
+                        ]);
+                    }
+                }
+            }
+
             $venta->fill([
                 'numero_ticket' => $numeroTicket,
-                'turno_id' => $datos['turno_id'],
+                'turno_id' => $turno->id,
                 'usuario_id' => $datos['usuario_id'],
                 'cliente_id' => $datos['cliente_id'] ?? null,
                 'total' => round($totalCalculado, 2),
                 'estado' => $estado,
             ])->save();
 
-            // Guardar líneas de detalle y descontar stock si la venta se completa
             foreach ($detallesPreparados as $linea) {
                 DetalleVenta::create([
                     'venta_id' => $venta->id,
@@ -82,7 +118,7 @@ class VentaService
                 if ($estado === 'completada' && $linea['producto'] && $linea['producto']->controlar_stock) {
                     $this->inventarioService->registrarMovimiento(
                         $linea['producto'],
-                        $datos['usuario_id'],
+                        (int) $datos['usuario_id'],
                         'venta',
                         $linea['cantidad'],
                         "Venta Ticket #{$numeroTicket}"
@@ -90,9 +126,8 @@ class VentaService
                 }
             }
 
-            // Procesar pagos simples o mixtos si la venta se completa
             if ($estado === 'completada') {
-                $sumaPagos = 0;
+                $sumaPagos = 0.0;
 
                 foreach ($datos['pagos'] as $pago) {
                     $montoPago = round((float) $pago['monto'], 2);
@@ -118,7 +153,7 @@ class VentaService
                     ]);
                 }
 
-                if (abs($sumaPagos - $venta->total) > 0.05) {
+                if (abs($sumaPagos - (float) $venta->total) > 0.05) {
                     throw ValidationException::withMessages([
                         'pagos' => "La suma de los pagos ({$sumaPagos}) no coincide con el total de la venta ({$venta->total}).",
                     ]);
@@ -131,43 +166,48 @@ class VentaService
 
     public function anularVenta(Venta $venta, int $usuarioId, string $motivo): Venta
     {
-        if ($venta->estado === 'anulada') {
-            throw ValidationException::withMessages([
-                'venta' => 'Esta venta ya se encuentra anulada.',
-            ]);
-        }
-
         return DB::transaction(function () use ($venta, $usuarioId, $motivo) {
-            $venta->load(['detalles.producto', 'pagos']);
+            $ventaBloqueada = Venta::lockForUpdate()->findOrFail($venta->id);
 
-            // Si estaba completada, devolvemos stock estricto y revertimos deuda si fue fiada
-            if ($venta->estado === 'completada') {
-                foreach ($venta->detalles as $detalle) {
+            if ($ventaBloqueada->estado === 'anulada') {
+                throw ValidationException::withMessages([
+                    'venta' => 'Esta venta ya se encuentra anulada.',
+                ]);
+            }
+
+            $ventaBloqueada->load(['detalles.producto', 'pagos']);
+
+            if ($ventaBloqueada->estado === 'completada') {
+                foreach ($ventaBloqueada->detalles as $detalle) {
                     if ($detalle->producto && $detalle->producto->controlar_stock) {
                         $this->inventarioService->registrarMovimiento(
                             $detalle->producto,
                             $usuarioId,
                             'anulacion',
-                            $detalle->cantidad,
-                            "Anulación Ticket #{$venta->numero_ticket}: {$motivo}"
+                            (int) $detalle->cantidad,
+                            "Anulación Ticket #{$ventaBloqueada->numero_ticket}: {$motivo}"
                         );
                     }
                 }
 
-                $montoCredito = $venta->pagos->where('metodo_pago', 'credito')->sum('monto');
-                if ($montoCredito > 0 && $venta->cliente_id) {
-                    Cliente::where('id', $venta->cliente_id)->decrement('saldo_deudor', $montoCredito);
+                $montoCredito = (float) $ventaBloqueada->pagos->where('metodo_pago', 'credito')->sum('monto');
+                if ($montoCredito > 0 && $ventaBloqueada->cliente_id) {
+                    $cliente = Cliente::lockForUpdate()->find($ventaBloqueada->cliente_id);
+                    if ($cliente) {
+                        $nuevoSaldo = max(0, round((float) $cliente->saldo_deudor - $montoCredito, 2));
+                        $cliente->update(['saldo_deudor' => $nuevoSaldo]);
+                    }
                 }
             }
 
-            $venta->update([
+            $ventaBloqueada->update([
                 'estado' => 'anulada',
                 'motivo_anulacion' => $motivo,
                 'anulada_por_usuario_id' => $usuarioId,
                 'fecha_anulacion' => now(),
             ]);
 
-            return $venta->fresh(['detalles', 'pagos', 'cliente', 'anuladaPor:id,nombre']);
+            return $ventaBloqueada->fresh(['detalles', 'pagos', 'cliente', 'anuladaPor:id,nombre']);
         });
     }
 }

@@ -35,8 +35,12 @@ export const ModuloConfiguracion: React.FC = () => {
   const [rol, setRol] = useState<'admin' | 'cajero'>('cajero');
 
   const cargarUsuarios = async () => {
-    const res = await api.get('/usuarios');
-    setUsuarios(res.data);
+    try {
+      const res = await api.get('/usuarios');
+      setUsuarios(res.data);
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'No se pudo cargar la lista de usuarios.' });
+    }
   };
 
   useEffect(() => {
@@ -46,9 +50,13 @@ export const ModuloConfiguracion: React.FC = () => {
 
   const guardarConfiguracion = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    await api.put('/configuracion', { configuraciones: formConfig });
-    await recargarCatalogos();
-    setMensaje({ tipo: 'success', texto: '✅ Cambios guardados en la configuración de PanPOS.' });
+    try {
+      await api.put('/configuracion', { configuraciones: formConfig });
+      await recargarCatalogos();
+      setMensaje({ tipo: 'success', texto: '✅ Cambios guardados en la configuración de PanPOS.' });
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'No se pudieron guardar los cambios de configuración.' });
+    }
   };
 
   const crearUsuario = async (e: React.FormEvent) => {
@@ -99,11 +107,15 @@ export const ModuloConfiguracion: React.FC = () => {
   };
 
   const dispararBackupManual = async () => {
-    const res = await api.post('/sistema/backup');
-    setMensaje({
-      tipo: 'success',
-      texto: `Respaldo creado en: ${res.data.ruta_local} ${res.data.copiado_usb ? '(+ Copiado a USB)' : ''}`,
-    });
+    try {
+      const res = await api.post('/sistema/backup');
+      setMensaje({
+        tipo: 'success',
+        texto: `Respaldo creado en: ${res.data.ruta_local} ${res.data.copiado_usb ? '(+ Copiado a USB)' : ''}`,
+      });
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'No se pudo ejecutar el respaldo manual.' });
+    }
   };
 
   const IconCard = ({
@@ -291,8 +303,11 @@ export const ModuloConfiguracion: React.FC = () => {
                             <button className="btn btn-sm btn-outline-primary me-1" onClick={() => alternarRolRapido(u)}>
                               Cambiar a {u.rol === 'admin' ? 'CAJERO' : 'ADMIN'}
                             </button>
-                            <button className="btn btn-sm btn-outline-secondary" onClick={() => alternarActivoUsuario(u)}>
+                            <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => alternarActivoUsuario(u)}>
                               {u.activo ? 'Desactivar' : 'Activar'}
+                            </button>
+                            <button className="btn btn-sm btn-outline-danger" onClick={() => eliminarUsuario(u)}>
+                              Eliminar
                             </button>
                           </td>
                         </tr>
@@ -307,11 +322,17 @@ export const ModuloConfiguracion: React.FC = () => {
                     <div className="col-md-3">
                       <input className="form-control" placeholder="Nombre completo" value={nombre} onChange={(e) => setNombre(e.target.value)} required />
                     </div>
-                    <div className="col-md-3">
+                    <div className="col-md-2">
                       <input className="form-control" placeholder="Usuario login" value={username} onChange={(e) => setUsername(e.target.value)} required />
                     </div>
-                    <div className="col-md-3">
+                    <div className="col-md-2">
                       <input type="password" className="form-control" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                    </div>
+                    <div className="col-md-2">
+                      <select className="form-select" value={rol} onChange={(e) => setRol(e.target.value as "admin" | "cajero")}>
+                        <option value="cajero">Cajero</option>
+                        <option value="admin">Admin</option>
+                      </select>
                     </div>
                     <div className="col-md-3">
                       <button type="submit" className="btn btn-primary w-100 fw-bold">Crear Usuario</button>

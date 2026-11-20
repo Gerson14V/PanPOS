@@ -17,13 +17,17 @@ export const ModuloProveedores: React.FC = () => {
   const [proveedorSeleccionadoId, setProveedorSeleccionadoId] = useState<number | null>(null);
 
   const consultarVentasProveedores = async (fechaDesde = desde, fechaHasta = hasta) => {
-    const res = await api.get(`/reportes/ventas-periodo?desde=${fechaDesde}&hasta=${fechaHasta}`);
-    setReporte(res.data);
-    const ranking = res.data.ranking_proveedores || [];
-    if (ranking.length > 0) {
-      setProveedorSeleccionadoId((prev) =>
-        prev !== null && ranking.some((r: any) => r.id === prev) ? prev : ranking[0].id
-      );
+    try {
+      const res = await api.get(`/reportes/ventas-periodo?desde=${fechaDesde}&hasta=${fechaHasta}`);
+      setReporte(res.data);
+      const ranking = res.data.ranking_proveedores || [];
+      if (ranking.length > 0) {
+        setProveedorSeleccionadoId((prev) =>
+          prev !== null && ranking.some((r: any) => r.id === prev) ? prev : ranking[0].id
+        );
+      }
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'No se pudo consultar el reporte de proveedores.' });
     }
   };
 

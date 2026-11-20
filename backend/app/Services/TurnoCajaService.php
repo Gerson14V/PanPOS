@@ -12,30 +12,31 @@ class TurnoCajaService
 {
     public function abrirTurno(int $usuarioId, float $montoInicial): TurnoCaja
     {
-        $abierto = TurnoCaja::where('estado', 'abierto')->first();
-        if ($abierto) {
-            throw ValidationException::withMessages([
-                'turno' => 'Ya existe un turno abierto actualmente.',
-            ]);
-        }
+        return DB::transaction(function () use ($usuarioId, $montoInicial) {
+            $abierto = TurnoCaja::where('estado', 'abierto')->lockForUpdate()->first();
+            if ($abierto) {
+                throw ValidationException::withMessages([
+                    'turno' => 'Ya existe un turno abierto actualmente.',
+                ]);
+            }
 
-        return TurnoCaja::create([
-            'usuario_id' => $usuarioId,
-            'fecha_apertura' => now(),
-            'estado' => 'abierto',
-            'monto_inicial' => $montoInicial,
-        ]);
+            return TurnoCaja::create([
+                'usuario_id' => $usuarioId,
+                'fecha_apertura' => now(),
+                'estado' => 'abierto',
+                'monto_inicial' => $montoInicial,
+            ]);
+        });
     }
 
-    // Calcula cuánto efectivo físico exacto hay en la gaveta en este instante
     public function calcularEfectivoDisponible(TurnoCaja $turno): float
     {
-        $ventasCompletadas = $turno->ventas()->where('estado', 'completada')->pluck('id');
-
         $ventasEfectivo = (float) DB::table('pagos_venta')
-            ->whereIn('venta_id', $ventasCompletadas)
-            ->where('metodo_pago', 'efectivo')
-            ->sum('monto');
+            ->join('ventas', 'pagos_venta.venta_id', '=', 'ventas.id')
+            ->where('ventas.turno_id', $turno->id)
+            ->where('ventas.estado', 'completada')
+            ->where('pagos_venta.metodo_pago', 'efectivo')
+            ->sum('pagos_venta.monto');
 
         $movimientos = $turno->movimientosCaja()->where('metodo_pago', 'efectivo')->get();
 
@@ -51,10 +52,16 @@ class TurnoCajaService
     {
         return DB::transaction(function () use ($datos) {
             $turno = TurnoCaja::lockForUpdate()->findOrFail($datos['turno_id']);
+
+            if ($turno->estado !== 'abierto') {
+                throw ValidationException::withMessages([
+                    'turno' => 'No se pueden registrar movimientos porque el turno de caja está cerrado.',
+                ]);
+            }
+
             $monto = round((float) $datos['monto'], 2);
             $metodoPago = $datos['metodo_pago'] ?? 'efectivo';
 
-            // 1. Validar que si sale dinero en efectivo (Préstamo a cliente o Salida F8), alcance el efectivo en caja
             if (in_array($datos['tipo'], ['prestamo_cliente', 'salida'], true) && $metodoPago === 'efectivo') {
                 $efectivoEnCaja = $this->calcularEfectivoDisponible($turno);
                 if ($monto > $efectivoEnCaja) {
@@ -64,7 +71,6 @@ class TurnoCajaService
                 }
             }
 
-            // 2. Validar operaciones de crédito con cliente (Abono no puede superar la deuda)
             if (!empty($datos['cliente_id'])) {
                 $cliente = Cliente::lockForUpdate()->findOrFail($datos['cliente_id']);
                 $deudaActual = round((float) $cliente->saldo_deudor, 2);
@@ -102,12 +108,12 @@ class TurnoCajaService
 
     public function obtenerResumenTurno(TurnoCaja $turno): array
     {
-        $ventasCompletadas = $turno->ventas()->where('estado', 'completada')->pluck('id');
-
         $pagosPorMetodo = DB::table('pagos_venta')
-            ->whereIn('venta_id', $ventasCompletadas)
-            ->selectRaw('metodo_pago, SUM(monto) as total')
-            ->groupBy('metodo_pago')
+            ->join('ventas', 'pagos_venta.venta_id', '=', 'ventas.id')
+            ->where('ventas.turno_id', $turno->id)
+            ->where('ventas.estado', 'completada')
+            ->selectRaw('pagos_venta.metodo_pago, SUM(pagos_venta.monto) as total')
+            ->groupBy('pagos_venta.metodo_pago')
             ->pluck('total', 'metodo_pago');
 
         $ventasEfectivo = (float) ($pagosPorMetodo['efectivo'] ?? 0);
@@ -136,7 +142,8 @@ class TurnoCajaService
             ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
             ->leftJoin('productos', 'detalle_ventas.producto_id', '=', 'productos.id')
             ->leftJoin('departamentos', 'productos.departamento_id', '=', 'departamentos.id')
-            ->whereIn('ventas.id', $ventasCompletadas)
+            ->where('ventas.turno_id', $turno->id)
+            ->where('ventas.estado', 'completada')
             ->selectRaw("
                 COALESCE(departamentos.nombre, 'Artículo Común') as departamento,
                 SUM(detalle_ventas.subtotal) as total_ventas,
@@ -182,19 +189,29 @@ class TurnoCajaService
 
     public function cerrarTurno(TurnoCaja $turno, float $efectivoContado, ?string $observaciones = null): TurnoCaja
     {
-        $resumen = $this->obtenerResumenTurno($turno);
-        $esperado = $resumen['gaveta_efectivo']['efectivo_esperado'];
-        $diferencia = round($efectivoContado - $esperado, 2);
+        return DB::transaction(function () use ($turno, $efectivoContado, $observaciones) {
+            $turnoBloqueado = TurnoCaja::lockForUpdate()->findOrFail($turno->id);
 
-        $turno->update([
-            'fecha_cierre' => now(),
-            'estado' => 'cerrado',
-            'total_efectivo_esperado' => $esperado,
-            'total_efectivo_contado' => $efectivoContado,
-            'diferencia_arqueo' => $diferencia,
-            'observaciones' => $observaciones,
-        ]);
+            if ($turnoBloqueado->estado === 'cerrado') {
+                throw ValidationException::withMessages([
+                    'turno' => 'Este turno ya se encuentra cerrado.',
+                ]);
+            }
 
-        return $turno->fresh('usuario');
+            $resumen = $this->obtenerResumenTurno($turnoBloqueado);
+            $esperado = $resumen['gaveta_efectivo']['efectivo_esperado'];
+            $diferencia = round($efectivoContado - $esperado, 2);
+
+            $turnoBloqueado->update([
+                'fecha_cierre' => now(),
+                'estado' => 'cerrado',
+                'total_efectivo_esperado' => $esperado,
+                'total_efectivo_contado' => $efectivoContado,
+                'diferencia_arqueo' => $diferencia,
+                'observaciones' => $observaciones,
+            ]);
+
+            return $turnoBloqueado->fresh('usuario');
+        });
     }
 }

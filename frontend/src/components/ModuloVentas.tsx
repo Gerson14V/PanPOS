@@ -15,6 +15,7 @@ export const ModuloVentas: React.FC = () => {
     agregarArticuloComun,
     cambiarCantidadCarrito,
     eliminarDelCarrito,
+    reemplazarCarrito,
     limpiarCarrito,
     recargarCatalogos,
   } = usePos();
@@ -30,6 +31,8 @@ export const ModuloVentas: React.FC = () => {
   const [ventasEnEspera, setVentasEnEspera] = useState<any[]>([]);
   const [ventaEnEsperaId, setVentaEnEsperaId] = useState<number | null>(null);
   const [procesandoVenta, setProcesandoVenta] = useState(false);
+  const [procesandoMovCaja, setProcesandoMovCaja] = useState(false);
+  const [anulandoId, setAnulandoId] = useState<number | null>(null);
 
   // Modal Ventas del Día
   const [modalVentasDia, setModalVentasDia] = useState(false);
@@ -189,7 +192,7 @@ export const ModuloVentas: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [carrito, hayModalAbierto, busqueda, procesarTerminoBusqueda]);
+  }, [carrito, hayModalAbierto, busqueda, procesarTerminoBusqueda, modalCobro, modalComun, modalCajaMov, modalEspera, modalVentasDia]);
 
   const mantenerFocoEnLector = (e: React.MouseEvent) => {
     if (hayModalAbierto) return;
@@ -222,20 +225,27 @@ export const ModuloVentas: React.FC = () => {
   };
 
   const eliminarTicketDelDia = async (ventaId: number, numeroTicket: number) => {
-    if (!usuario) return;
+    if (!usuario || anulandoId !== null) return;
     const motivo = window.prompt(
       `¿Desea eliminar/anular el Ticket #${numeroTicket}? (Se devolverá el inventario y se revertirá el cobro).\nMotivo:`,
       'Cancelado en caja'
     );
     if (!motivo || !motivo.trim()) return;
 
-    await api.post(`/ventas/${ventaId}/anular`, {
-      usuario_id: usuario.id,
-      motivo_anulacion: motivo.trim(),
-    });
-    await recargarCatalogos();
-    await abrirVentasDelDia();
-    setMensaje({ tipo: 'warning', texto: `Ticket #${numeroTicket} eliminado/anulado y existencias restauradas.` });
+    setAnulandoId(ventaId);
+    try {
+      await api.post(`/ventas/${ventaId}/anular`, {
+        usuario_id: usuario.id,
+        motivo_anulacion: motivo.trim(),
+      });
+      await recargarCatalogos();
+      await abrirVentasDelDia();
+      setMensaje({ tipo: 'warning', texto: `Ticket #${numeroTicket} eliminado/anulado y existencias restauradas.` });
+    } catch (err: any) {
+      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'No se pudo anular el ticket.' });
+    } finally {
+      setAnulandoId(null);
+    }
   };
 
   const confirmarVenta = async (estado: 'completada' | 'en_espera') => {
@@ -315,23 +325,33 @@ export const ModuloVentas: React.FC = () => {
   };
 
   const recuperarTicketEspera = (venta: any) => {
-    limpiarCarrito();
-    setVentaEnEsperaId(venta.id);
-    venta.detalles.forEach((d: any) => {
+    const itemsRecuperados = venta.detalles.map((d: any, idx: number) => {
       const prod = productos.find((p) => p.id === d.producto_id);
-      if (prod) {
-        agregarAlCarrito(prod, d.cantidad);
-      } else {
-        agregarArticuloComun(d.descripcion_producto, Number(d.precio_unitario), d.cantidad);
-      }
+      const precio = Number(d.precio_unitario);
+      const cant = Math.max(1, Number(d.cantidad) || 1);
+      return {
+        uid: `esp-${venta.id}-${idx}-${Date.now()}`,
+        producto_id: prod ? prod.id : null,
+        codigo_barras: prod ? prod.codigo_barras : 'COMUN',
+        descripcion_producto: prod ? prod.nombre : d.descripcion_producto,
+        precio_unitario: precio,
+        cantidad: cant,
+        subtotal: cant * precio,
+        stock_actual: prod ? Math.max(0, Number(prod.stock_actual || 0)) : undefined,
+        controlar_stock: prod ? prod.controlar_stock : false,
+      };
     });
+    reemplazarCarrito(itemsRecuperados);
+    setVentaEnEsperaId(venta.id);
+    setClienteId(venta.cliente_id ? String(venta.cliente_id) : '');
     setModalEspera(false);
   };
 
   const guardarMovimientoCaja = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!turno || !usuario || !modalCajaMov) return;
+    if (procesandoMovCaja || !turno || !usuario || !modalCajaMov) return;
     setErrorMovCaja(null);
+    setProcesandoMovCaja(true);
     try {
       await api.post(`/turnos/${turno.id}/movimientos`, {
         usuario_id: usuario.id,
@@ -350,6 +370,8 @@ export const ModuloVentas: React.FC = () => {
         err.response?.data?.message ||
         'Error al registrar movimiento.';
       setErrorMovCaja(msg);
+    } finally {
+      setProcesandoMovCaja(false);
     }
   };
 
@@ -692,9 +714,10 @@ export const ModuloVentas: React.FC = () => {
                             {v.estado !== 'anulada' && (
                               <button
                                 className="btn btn-sm btn-outline-danger fw-bold"
+                                disabled={anulandoId === v.id}
                                 onClick={() => eliminarTicketDelDia(v.id, v.numero_ticket)}
                               >
-                                🗑 Eliminar
+                                {anulandoId === v.id ? 'Anulando...' : '🗑 Eliminar'}
                               </button>
                             )}
                           </td>
@@ -922,7 +945,7 @@ export const ModuloVentas: React.FC = () => {
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="submit" className="btn btn-primary w-100 fw-bold">Guardar Movimiento</button>
+                <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={procesandoMovCaja}>{procesandoMovCaja ? 'Guardando...' : 'Guardar Movimiento'}</button>
               </div>
             </form>
           </div>
