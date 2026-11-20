@@ -9,6 +9,7 @@ export const ModuloProveedores: React.FC = () => {
   const [nombreNuevo, setNombreNuevo] = useState('');
   const [editando, setEditando] = useState<Departamento | null>(null);
   const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'danger'; texto: string } | null>(null);
+  const [guardandoProveedor, setGuardandoProveedor] = useState(false);
 
   const hoy = fechaLocalISO();
   const [desde, setDesde] = useState(hoy);
@@ -73,7 +74,8 @@ export const ModuloProveedores: React.FC = () => {
 
   const guardarProveedor = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nombreNuevo.trim()) return;
+    if (guardandoProveedor || !nombreNuevo.trim()) return;
+    setGuardandoProveedor(true);
     try {
       if (editando) {
         await api.put(`/departamentos/${editando.id}`, { nombre: nombreNuevo.trim() });
@@ -88,6 +90,8 @@ export const ModuloProveedores: React.FC = () => {
       await consultarVentasProveedores();
     } catch (err: any) {
       setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'Ya existe un proveedor con ese nombre.' });
+    } finally {
+      setGuardandoProveedor(false);
     }
   };
 
@@ -135,8 +139,8 @@ export const ModuloProveedores: React.FC = () => {
                     Cancelar
                   </button>
                 )}
-                <button type="submit" className="btn btn-success flex-grow-1 fw-bold">
-                  {editando ? 'Guardar Cambios' : '+ Crear Proveedor'}
+                <button type="submit" className="btn btn-success flex-grow-1 fw-bold" disabled={guardandoProveedor}>
+                  {guardandoProveedor ? 'Guardando...' : editando ? 'Guardar Cambios' : '+ Crear Proveedor'}
                 </button>
               </div>
             </form>

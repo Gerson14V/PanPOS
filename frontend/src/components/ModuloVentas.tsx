@@ -54,15 +54,16 @@ export const ModuloVentas: React.FC = () => {
   const [errorMovCaja, setErrorMovCaja] = useState<string | null>(null);
 
   const totalVenta = carrito.reduce((acc, i) => acc + i.subtotal, 0);
-  const sumaMixto =
-    (Number(montoEfectivoMixto) || 0) +
-    (Number(montoTarjetaMixto) || 0) +
-    (Number(montoSinpeMixto) || 0) +
-    (Number(montoCreditoMixto) || 0);
+  const efMixtoVal = Number(montoEfectivoMixto) || 0;
+  const tjMixtoVal = Number(montoTarjetaMixto) || 0;
+  const spMixtoVal = Number(montoSinpeMixto) || 0;
+  const crMixtoVal = Number(montoCreditoMixto) || 0;
+  const sumaMixto = efMixtoVal + tjMixtoVal + spMixtoVal + crMixtoVal;
+  const mixtoSinNegativos = efMixtoVal >= 0 && tjMixtoVal >= 0 && spMixtoVal >= 0 && crMixtoVal >= 0;
   const faltaClienteCredito =
-    (metodoPrincipal === 'credito' || (metodoPrincipal === 'mixto' && (Number(montoCreditoMixto) || 0) > 0)) &&
+    (metodoPrincipal === 'credito' || (metodoPrincipal === 'mixto' && crMixtoVal > 0)) &&
     !clienteId;
-  const mixtoCuadra = metodoPrincipal !== 'mixto' || Math.abs(sumaMixto - totalVenta) < 0.01;
+  const mixtoCuadra = metodoPrincipal !== 'mixto' || (mixtoSinNegativos && Math.abs(sumaMixto - totalVenta) < 0.01);
   const efectivoSuficiente = metodoPrincipal !== 'efectivo' || (Number(pagaCon) || 0) >= totalVenta;
   const cobroValido = !faltaClienteCredito && mixtoCuadra && efectivoSuficiente;
   const mostrarRapidos = (configuracion['panel_botones_rapidos'] ?? '1') === '1';
@@ -604,6 +605,8 @@ export const ModuloVentas: React.FC = () => {
                     className="btn btn-outline-danger btn-sm fw-bold"
                     onClick={() => {
                       limpiarCarrito();
+                      setVentaEnEsperaId(null);
+                      setClienteId('');
                       inputScanRef.current?.focus();
                     }}
                   >
@@ -748,10 +751,16 @@ export const ModuloVentas: React.FC = () => {
       {modalCobro && (
         <div className="modal d-block" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="modal-dialog modal-lg modal-dialog-centered">
-            <div className="modal-content">
+            <form
+              className="modal-content"
+              onSubmit={(e) => {
+                e.preventDefault();
+                confirmarVenta('completada');
+              }}
+            >
               <div className="modal-header bg-success text-white">
                 <h5 className="modal-title fw-bold">Confirmar Cobro — Total: ₡{totalVenta.toLocaleString()}</h5>
-                <button className="btn-close btn-close-white" onClick={() => setModalCobro(false)} />
+                <button type="button" className="btn-close btn-close-white" onClick={() => setModalCobro(false)} />
               </div>
               <div className="modal-body">
                 <div className="btn-group w-100 mb-3">
@@ -813,8 +822,13 @@ export const ModuloVentas: React.FC = () => {
                         <label className="form-label fw-bold">Paga con (₡):</label>
                         <input
                           type="number"
+                          min="0"
+                          step="any"
                           className="form-control form-control-lg fs-3 fw-bold"
                           value={pagaCon}
+                          onKeyDown={(e) => {
+                            if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault();
+                          }}
                           onChange={(e) => setPagaCon(e.target.value)}
                           autoFocus
                         />
@@ -833,19 +847,19 @@ export const ModuloVentas: React.FC = () => {
                   <div className="row g-2 bg-body-secondary p-3 rounded">
                     <div className="col-6">
                       <label className="form-label fw-semibold">Monto en Efectivo (₡)</label>
-                      <input type="number" className="form-control" value={montoEfectivoMixto} onChange={(e) => setMontoEfectivoMixto(e.target.value)} />
+                      <input type="number" min="0" step="any" className="form-control" value={montoEfectivoMixto} onKeyDown={(e) => { if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault(); }} onChange={(e) => setMontoEfectivoMixto(e.target.value)} />
                     </div>
                     <div className="col-6">
                       <label className="form-label fw-semibold">Monto en SINPE Móvil (₡)</label>
-                      <input type="number" className="form-control" value={montoSinpeMixto} onChange={(e) => setMontoSinpeMixto(e.target.value)} />
+                      <input type="number" min="0" step="any" className="form-control" value={montoSinpeMixto} onKeyDown={(e) => { if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault(); }} onChange={(e) => setMontoSinpeMixto(e.target.value)} />
                     </div>
                     <div className="col-6">
                       <label className="form-label fw-semibold">Monto en Tarjeta (₡)</label>
-                      <input type="number" className="form-control" value={montoTarjetaMixto} onChange={(e) => setMontoTarjetaMixto(e.target.value)} />
+                      <input type="number" min="0" step="any" className="form-control" value={montoTarjetaMixto} onKeyDown={(e) => { if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault(); }} onChange={(e) => setMontoTarjetaMixto(e.target.value)} />
                     </div>
                     <div className="col-6">
                       <label className="form-label fw-semibold">Monto a Crédito / Fiado (₡)</label>
-                      <input type="number" className="form-control" value={montoCreditoMixto} onChange={(e) => setMontoCreditoMixto(e.target.value)} />
+                      <input type="number" min="0" step="any" className="form-control" value={montoCreditoMixto} onKeyDown={(e) => { if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault(); }} onChange={(e) => setMontoCreditoMixto(e.target.value)} />
                     </div>
                   </div>
                 )}
@@ -866,18 +880,18 @@ export const ModuloVentas: React.FC = () => {
                 )}
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary btn-lg" disabled={procesandoVenta} onClick={() => setModalCobro(false)}>
+                <button type="button" className="btn btn-secondary btn-lg" disabled={procesandoVenta} onClick={() => setModalCobro(false)}>
                   Cancelar (ESC)
                 </button>
                 <button
+                  type="submit"
                   className="btn btn-success btn-lg px-5 fw-bold"
                   disabled={procesandoVenta || !cobroValido}
-                  onClick={() => confirmarVenta('completada')}
                 >
                   {procesandoVenta ? 'Registrando venta...' : 'Confirmar y Registrar Venta'}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}

@@ -68,10 +68,11 @@ class ReporteExcelDiarioService
             }
             $granTotalVentas += $ventasDia;
 
+            $tieneAbierto = $turnosDelDia->contains('estado', 'abierto');
             $turnosCerrados = $turnosDelDia->where('estado', 'cerrado');
             $ultimoTurno = $turnosDelDia->last();
 
-            if ($turnosCerrados->isNotEmpty()) {
+            if (!$tieneAbierto && $turnosCerrados->isNotEmpty()) {
                 $ultimoCerrado = $turnosCerrados->last();
                 $efectivoEnCaja = (float) $ultimoCerrado->total_efectivo_contado;
                 $diferenciaDia = round((float) $turnosCerrados->sum('diferencia_arqueo'), 2);
@@ -90,7 +91,8 @@ class ReporteExcelDiarioService
                     $textoEstado = 'EXACTO (₡0.00)';
                 }
             } else {
-                $resumenAbierto = $this->turnoCajaService->obtenerResumenTurno($ultimoTurno);
+                $turnoAbierto = $turnosDelDia->where('estado', 'abierto')->last() ?? $ultimoTurno;
+                $resumenAbierto = $this->turnoCajaService->obtenerResumenTurno($turnoAbierto);
                 $efectivoEnCaja = (float) ($resumenAbierto['gaveta_efectivo']['efectivo_esperado'] ?? 0);
                 $bgEstado = '#e2e8f0';
                 $colorTexto = '#475569';

@@ -175,6 +175,13 @@ class VentaService
                 ]);
             }
 
+            $turno = TurnoCaja::lockForUpdate()->find($ventaBloqueada->turno_id);
+            if ($turno && $turno->estado !== 'abierto') {
+                throw ValidationException::withMessages([
+                    'venta' => 'No se puede anular un ticket perteneciente a un turno que ya fue cerrado.',
+                ]);
+            }
+
             $ventaBloqueada->load(['detalles.producto', 'pagos']);
 
             if ($ventaBloqueada->estado === 'completada') {

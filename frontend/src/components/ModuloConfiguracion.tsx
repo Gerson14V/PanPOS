@@ -33,6 +33,8 @@ export const ModuloConfiguracion: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rol, setRol] = useState<'admin' | 'cajero'>('cajero');
+  const [guardandoConfig, setGuardandoConfig] = useState(false);
+  const [creandoUsuario, setCreandoUsuario] = useState(false);
 
   const cargarUsuarios = async () => {
     try {
@@ -50,17 +52,23 @@ export const ModuloConfiguracion: React.FC = () => {
 
   const guardarConfiguracion = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (guardandoConfig) return;
+    setGuardandoConfig(true);
     try {
       await api.put('/configuracion', { configuraciones: formConfig });
       await recargarCatalogos();
       setMensaje({ tipo: 'success', texto: '✅ Cambios guardados en la configuración de PanPOS.' });
     } catch {
       setMensaje({ tipo: 'danger', texto: 'No se pudieron guardar los cambios de configuración.' });
+    } finally {
+      setGuardandoConfig(false);
     }
   };
 
   const crearUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (creandoUsuario) return;
+    setCreandoUsuario(true);
     try {
       await api.post('/usuarios', { nombre, username, password, rol });
       setNombre('');
@@ -70,6 +78,8 @@ export const ModuloConfiguracion: React.FC = () => {
       setMensaje({ tipo: 'success', texto: 'Cajero / Usuario creado correctamente.' });
     } catch (err: any) {
       setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'Error al crear usuario.' });
+    } finally {
+      setCreandoUsuario(false);
     }
   };
 
@@ -97,14 +107,7 @@ export const ModuloConfiguracion: React.FC = () => {
     }
   };
 
-  const alternarActivoUsuario = async (u: Usuario) => {
-    try {
-      await api.put(`/usuarios/${u.id}`, { activo: !u.activo });
-      await cargarUsuarios();
-    } catch (err: any) {
-      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'No se puede desactivar al único Administrador.' });
-    }
-  };
+
 
   const dispararBackupManual = async () => {
     try {
@@ -222,8 +225,8 @@ export const ModuloConfiguracion: React.FC = () => {
                 ← Volver al Menú de Configuración
               </button>
               {seccionActiva !== 'cajeros' && (
-                <button className="btn btn-success fw-bold" onClick={() => guardarConfiguracion()}>
-                  💾 Guardar Cambios de esta Sección
+                <button className="btn btn-success fw-bold" disabled={guardandoConfig} onClick={() => guardarConfiguracion()}>
+                  {guardandoConfig ? 'Guardando...' : '💾 Guardar Cambios de esta Sección'}
                 </button>
               )}
             </div>
@@ -303,9 +306,7 @@ export const ModuloConfiguracion: React.FC = () => {
                             <button className="btn btn-sm btn-outline-primary me-1" onClick={() => alternarRolRapido(u)}>
                               Cambiar a {u.rol === 'admin' ? 'CAJERO' : 'ADMIN'}
                             </button>
-                            <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => alternarActivoUsuario(u)}>
-                              {u.activo ? 'Desactivar' : 'Activar'}
-                            </button>
+
                             <button className="btn btn-sm btn-outline-danger" onClick={() => eliminarUsuario(u)}>
                               Eliminar
                             </button>
@@ -335,7 +336,7 @@ export const ModuloConfiguracion: React.FC = () => {
                       </select>
                     </div>
                     <div className="col-md-3">
-                      <button type="submit" className="btn btn-primary w-100 fw-bold">Crear Usuario</button>
+                      <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={creandoUsuario}>{creandoUsuario ? 'Creando...' : 'Crear Usuario'}</button>
                     </div>
                   </div>
                 </form>

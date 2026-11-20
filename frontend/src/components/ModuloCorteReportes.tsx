@@ -126,7 +126,7 @@ export const ModuloCorteReportes: React.FC = () => {
 
   const totalPorDenominaciones = useMemo(() => {
     return DENOMINACIONES_CR.reduce((acc, d) => {
-      const cant = Number(conteoDenominaciones[d.valor]) || 0;
+      const cant = Math.max(0, Number(conteoDenominaciones[d.valor]) || 0);
       return acc + cant * d.valor;
     }, 0);
   }, [conteoDenominaciones]);
@@ -135,7 +135,7 @@ export const ModuloCorteReportes: React.FC = () => {
   const efectivoContadoFinal = hayDenominacionesLlenas
     ? totalPorDenominaciones
     : efectivoContadoManual !== ''
-    ? Number(efectivoContadoManual)
+    ? Math.max(0, Number(efectivoContadoManual) || 0)
     : null;
 
   const esperado = Number(resumen?.gaveta_efectivo?.efectivo_esperado || 0);
@@ -247,7 +247,7 @@ export const ModuloCorteReportes: React.FC = () => {
       )}
 
       {/* Franja de Navegación Superior del Módulo */}
-      <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+      <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2 no-print">
         <div className="btn-group">
           <button
             className={`btn fw-bold ${vista === 'corte' ? 'btn-primary' : 'btn-outline-primary'}`}
@@ -280,7 +280,7 @@ export const ModuloCorteReportes: React.FC = () => {
       {/* ===================================================================== */}
       {vista === 'corte' && (
         <>
-          <div className="card shadow-sm mb-3">
+          <div className="card shadow-sm mb-3 no-print">
             <div className="card-body py-2 px-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
               <div className="d-flex flex-wrap align-items-center gap-2">
                 {turno && (
@@ -583,7 +583,7 @@ export const ModuloCorteReportes: React.FC = () => {
 
           {/* Botón Contar Billetes y Cerrar Turno centrado abajo (en Corte de Cajero) */}
           {mostrarCierreDeCajero && (
-            <div className="d-flex justify-content-center my-3">
+            <div className="d-flex justify-content-center my-3 no-print">
               <button
                 className={`btn btn-lg px-5 fw-bold shadow-sm ${mostrarConteo ? 'btn-secondary' : 'btn-danger'}`}
                 onClick={() => setMostrarConteo(!mostrarConteo)}
@@ -595,7 +595,7 @@ export const ModuloCorteReportes: React.FC = () => {
 
           {/* Panel Desplegable de Conteo de Billetes y Monedas */}
           {mostrarCierreDeCajero && mostrarConteo && (
-            <div className="card shadow-sm mb-3 border-primary">
+            <div className="card shadow-sm mb-3 border-primary no-print">
               <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <span className="fw-bold">💵 Conteo de Billetes y Monedas (Costa Rica) y Cierre de Turno</span>
                 <div className="d-flex gap-2">
@@ -623,7 +623,7 @@ export const ModuloCorteReportes: React.FC = () => {
                   <div className="col-lg-8">
                     <div className="row g-2">
                       {DENOMINACIONES_CR.map((d) => {
-                        const cant = Number(conteoDenominaciones[d.valor]) || 0;
+                        const cant = Math.max(0, Number(conteoDenominaciones[d.valor]) || 0);
                         return (
                           <div className="col-6 col-sm-4 col-md-3" key={d.valor}>
                             <div className="border rounded p-2 bg-body-tertiary">
@@ -639,6 +639,9 @@ export const ModuloCorteReportes: React.FC = () => {
                                 className="form-control form-control-sm fw-bold text-center"
                                 placeholder="0"
                                 value={conteoDenominaciones[d.valor] || ''}
+                                onKeyDown={(e) => {
+                                  if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault();
+                                }}
                                 onChange={(e) =>
                                   setConteoDenominaciones({
                                     ...conteoDenominaciones,
@@ -670,6 +673,9 @@ export const ModuloCorteReportes: React.FC = () => {
                           className="form-control form-control-lg fw-bold"
                           placeholder={hayDenominacionesLlenas ? `Calculado: ₡${totalPorDenominaciones.toLocaleString()}` : 'Monto físico contado'}
                           value={hayDenominacionesLlenas ? String(totalPorDenominaciones) : efectivoContadoManual}
+                          onKeyDown={(e) => {
+                            if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault();
+                          }}
                           onChange={(e) => setEfectivoContadoManual(e.target.value)}
                         />
                       </div>
