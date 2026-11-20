@@ -33,6 +33,7 @@ mkdir -p \
 
 echo "==> 4. Integrando Frontend compilado e íconos dentro de app/public/..."
 cp -rf "$PROY/frontend/dist/." "$DEST/app/public/"
+mv -f "$DEST/app/public/index.html" "$DEST/app/public/pos.html"
 cp -f "$PROY/assets/panpos.ico" "$DEST/panpos.ico"
 cp -f "$PROY/frontend/public/favicon.ico" "$DEST/app/public/favicon.ico"
 cp -f "$PROY/frontend/public/icon-64.png" "$DEST/app/public/icon-64.png"
