@@ -151,7 +151,7 @@ export const ModuloCorteReportes: React.FC = () => {
         total_efectivo_contado: efectivoContadoFinal,
         observaciones: observaciones || (hayDenominacionesLlenas ? 'Cierre con conteo de billetes y monedas' : ''),
       });
-      alert(`Turno #${turno.id} cerrado con éxito.\nRespaldo automático creado: ${res.data.respaldo.archivo}`);
+      alert(`Turno #${turno.id} cerrado con éxito.\nRespaldo BD: ${res.data.respaldo.archivo}\nExcel diario actualizado en: ${res.data.excel_diario?.ruta || "Escritorio"}`);
       limpiarCarrito();
       setTurno(null);
       setUsuario(null);
@@ -234,7 +234,7 @@ export const ModuloCorteReportes: React.FC = () => {
               🖨️ Imprimir Corte
             </button>
             <button className="btn btn-success fw-bold" onClick={descargarExcelCorte}>
-              📥 Exportar Excel (.XLS)
+              📥 Actualizar Excel Diario (.XLS)
             </button>
           </div>
         )}

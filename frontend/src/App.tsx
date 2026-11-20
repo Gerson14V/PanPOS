@@ -73,7 +73,7 @@ const MainLayout: React.FC = () => {
       setTurno(null);
       setUsuario(null);
       setModuloActivo('ventas');
-      alert(`Turno cerrado correctamente.\nRespaldo guardado: ${res.data.respaldo.archivo}`);
+      alert(`Turno cerrado correctamente.\nRespaldo BD: ${res.data.respaldo.archivo}\nExcel diario actualizado en: ${res.data.excel_diario?.ruta || "Escritorio"}`);
     } catch (err: any) {
       alert(err.response?.data?.message || 'Error al cerrar el turno.');
     } finally {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\TurnoCaja;
 use App\Services\BackupService;
+use App\Services\ReporteExcelDiarioService;
 use App\Services\TurnoCajaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,10 +14,10 @@ class TurnoCajaController extends Controller
 {
     public function __construct(
         private TurnoCajaService $turnoCajaService,
-        private BackupService $backupService
+        private BackupService $backupService,
+        private ReporteExcelDiarioService $reporteExcelDiarioService
     ) {}
 
-    // Lista cortes históricos (filtrables por fecha YYYY-MM-DD)
     public function index(Request $request): JsonResponse
     {
         $query = TurnoCaja::with('usuario:id,nombre')
@@ -90,10 +91,15 @@ class TurnoCajaController extends Controller
         );
 
         $respaldo = $this->backupService->generarRespaldo('cierre_turno');
+        $excel = $this->reporteExcelDiarioService->actualizarArchivoMaestro();
 
         return response()->json([
             'turno' => $turnoCerrado,
             'respaldo' => $respaldo,
+            'excel_diario' => [
+                'guardado' => $excel['guardado'],
+                'ruta' => $excel['ruta'],
+            ],
         ]);
     }
 }

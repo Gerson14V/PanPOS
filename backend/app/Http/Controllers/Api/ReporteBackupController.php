@@ -7,6 +7,7 @@ use App\Models\Departamento;
 use App\Models\TurnoCaja;
 use App\Models\Venta;
 use App\Services\BackupService;
+use App\Services\ReporteExcelDiarioService;
 use App\Services\TurnoCajaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +18,8 @@ class ReporteBackupController extends Controller
 {
     public function __construct(
         private TurnoCajaService $turnoCajaService,
-        private BackupService $backupService
+        private BackupService $backupService,
+        private ReporteExcelDiarioService $reporteExcelDiarioService
     ) {}
 
     public function ventasPorPeriodo(Request $request): JsonResponse
@@ -212,121 +214,13 @@ class ReporteBackupController extends Controller
         ]);
     }
 
-    public function exportarCorteExcel(TurnoCaja $turno): Response
+        public function exportarCorteExcel(TurnoCaja $turno): Response
     {
-        $resumen = $this->turnoCajaService->obtenerResumenTurno($turno);
-        $nombreArchivo = "Corte_Caja_Turno_{$turno->id}_" . now()->format('Y-m-d') . ".xls";
+        $excel = $this->reporteExcelDiarioService->actualizarArchivoMaestro();
 
-        $esperado = (float) $resumen['gaveta_efectivo']['efectivo_esperado'];
-        $contado = $resumen['turno']->total_efectivo_contado !== null
-            ? (float) $resumen['turno']->total_efectivo_contado
-            : $esperado;
-        $diferencia = round($contado - $esperado, 2);
-
-        if ($diferencia > 0) {
-            $bgEstado = '#d4edda';
-            $colorTexto = '#155724';
-            $textoEstado = 'SE PASÓ (SOBRANTE EN CAJA): +₡' . number_format($diferencia, 2);
-        } elseif ($diferencia < 0) {
-            $bgEstado = '#f8d7da';
-            $colorTexto = '#721c24';
-            $textoEstado = 'FALTÓ DINERO EN CAJA: -₡' . number_format(abs($diferencia), 2);
-        } else {
-            $bgEstado = '#fff3cd';
-            $colorTexto = '#856404';
-            $textoEstado = 'CAJA EXACTA (₡0.00 DIFERENCIA)';
-        }
-
-        $efectivoVentas = number_format((float) $resumen['desglose_pagos']['efectivo'], 2);
-        $sinpeVentas = number_format((float) $resumen['desglose_pagos']['sinpe'], 2);
-        $tarjetaVentas = number_format((float) $resumen['desglose_pagos']['tarjeta'], 2);
-        $creditoVentas = number_format((float) $resumen['desglose_pagos']['credito'], 2);
-        $totalVentas = number_format((float) $resumen['ventas_totales'], 2);
-
-        $esperadoFmt = number_format($esperado, 2);
-        $contadoFmt = $resumen['turno']->total_efectivo_contado !== null
-            ? '₡' . number_format($contado, 2)
-            : 'Turno aún abierto (Usando esperado: ₡' . $esperadoFmt . ')';
-
-        $cajero = e($resumen['turno']->usuario->nombre ?? 'Cajero');
-        $fecha = $resumen['turno']->fecha_apertura
-            ? \Carbon\Carbon::parse($resumen['turno']->fecha_apertura)->format('d/m/Y H:i')
-            : now()->format('d/m/Y H:i');
-
-        $html = <<<HTML
-        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-        <head>
-            <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-            <style>
-                table { border-collapse: collapse; font-family: Segoe UI, Arial, sans-serif; font-size: 13px; }
-                th, td { border: 1px solid #cbd5e1; padding: 8px 14px; }
-                .titulo { background-color: #4a3525; color: #ffffff; font-weight: bold; font-size: 15px; text-align: center; }
-                .subtitulo { background-color: #f3ede2; color: #3b2818; font-weight: bold; }
-                .monto { text-align: right; font-weight: bold; }
-                .total-general { background-color: #e2e8f0; font-weight: bold; font-size: 14px; }
-            </style>
-        </head>
-        <body>
-            <table>
-                <tr>
-                    <td colspan="2" class="titulo">REPORTE DE CORTE DE CAJA - PANPOS</td>
-                </tr>
-                <tr>
-                    <td><strong>Turno #</strong> {$turno->id} ({$cajero})</td>
-                    <td><strong>Fecha Apertura:</strong> {$fecha}</td>
-                </tr>
-                <tr><td colspan="2"></td></tr>
-
-                <tr>
-                    <td colspan="2" class="subtitulo">1. DINERO EN CAJA Y ARQUEO</td>
-                </tr>
-                <tr>
-                    <td>Dinero Esperado en Caja (Efectivo):</td>
-                    <td class="monto">₡{$esperadoFmt}</td>
-                </tr>
-                <tr>
-                    <td>Dinero Físico en Caja (Contado):</td>
-                    <td class="monto">{$contadoFmt}</td>
-                </tr>
-                <tr>
-                    <td style="font-weight:bold;">Resultado del Arqueo:</td>
-                    <td style="background-color: {$bgEstado}; color: {$colorTexto}; font-weight: bold; text-align: right;">
-                        {$textoEstado}
-                    </td>
-                </tr>
-                <tr><td colspan="2"></td></tr>
-
-                <tr>
-                    <td colspan="2" class="subtitulo">2. VENTAS TOTALES POR MÉTODO DE PAGO</td>
-                </tr>
-                <tr>
-                    <td>Ventas en Efectivo:</td>
-                    <td class="monto">₡{$efectivoVentas}</td>
-                </tr>
-                <tr>
-                    <td>Ventas por SINPE Móvil:</td>
-                    <td class="monto">₡{$sinpeVentas}</td>
-                </tr>
-                <tr>
-                    <td>Ventas con Tarjeta:</td>
-                    <td class="monto">₡{$tarjetaVentas}</td>
-                </tr>
-                <tr>
-                    <td>Ventas a Crédito (Fiados):</td>
-                    <td class="monto">₡{$creditoVentas}</td>
-                </tr>
-                <tr class="total-general">
-                    <td>GRAN TOTAL DE VENTAS (TODOS LOS MÉTODOS):</td>
-                    <td class="monto">₡{$totalVentas}</td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        HTML;
-
-        return response($html, 200, [
+        return response($excel['html'], 200, [
             'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
-            'Content-Disposition' => "attachment; filename=\"{$nombreArchivo}\"",
+            'Content-Disposition' => "attachment; filename=\"{$excel['archivo']}\"",
         ]);
     }
 
