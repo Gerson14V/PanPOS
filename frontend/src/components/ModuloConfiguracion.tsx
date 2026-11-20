@@ -359,7 +359,10 @@ export const ModuloConfiguracion: React.FC = () => {
             {/* 4. Facturación Electrónica (Hacienda Costa Rica v4.3 / v4.4) */}
             {seccionActiva === 'facturacion' && (
               <div>
-                <h5 className="fw-bold mb-2">🧾 Facturación Electrónica — Ministerio de Hacienda (Costa Rica)</h5>
+                <h5 className="fw-bold mb-2">🧾 Facturación Electrónica — Ministerio de Hacienda (Costa Rica) <span className="badge bg-warning text-dark ms-1">Próximamente</span></h5>
+                <div className="alert alert-warning py-2 small fw-semibold">
+                  ⏳ Módulo en preparación: actualmente guarda la configuración preliminar, pero todavía no emite ni envía comprobantes a Hacienda.
+                </div>
                 <p className="text-muted small mb-3">
                   Configure la emisión de Tiquete Electrónico y Factura Electrónica con cola offline automática si falla el internet.
                 </p>
@@ -541,7 +544,10 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'impresora' && (
               <div>
-                <h5 className="fw-bold mb-3">🖨️ Impresora Térmica de Tickets (ESC/POS)</h5>
+                <h5 className="fw-bold mb-3">🖨️ Impresora Térmica de Tickets (ESC/POS) <span className="badge bg-warning text-dark ms-1">Próximamente</span></h5>
+                <div className="alert alert-warning py-2 small fw-semibold">
+                  ⏳ Módulo en preparación: guarda las preferencias de impresora, pero la impresión directa ESC/POS aún no está conectada.
+                </div>
                 <div className="form-check form-switch mb-3">
                   <input
                     className="form-check-input"

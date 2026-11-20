@@ -33,7 +33,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [carrito, setCarrito] = useState<ItemCarrito[]>(() => {
     try {
       const guardado = localStorage.getItem(STORAGE_CARRITO_KEY);
-      return guardado ? JSON.parse(guardado) : [];
+      if (!guardado) return [];
+      const parsed = JSON.parse(guardado);
+      if (Array.isArray(parsed)) return parsed;
+      return Array.isArray(parsed?.items) ? parsed.items : [];
     } catch {
       return [];
     }
@@ -46,8 +49,83 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [configuracion, setConfiguracion] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_CARRITO_KEY, JSON.stringify(carrito));
-  }, [carrito]);
+    localStorage.setItem(
+      STORAGE_CARRITO_KEY,
+      JSON.stringify({ turno_id: turno?.id ?? null, items: carrito })
+    );
+  }, [carrito, turno?.id]);
+
+  // Validar que el carrito pertenezca al turno activo y sincronizar precios/stock actuales
+  useEffect(() => {
+    try {
+      const guardado = localStorage.getItem(STORAGE_CARRITO_KEY);
+      if (guardado && turno?.id) {
+        const parsed = JSON.parse(guardado);
+        if (!Array.isArray(parsed) && parsed?.turno_id && parsed.turno_id !== turno.id) {
+          setCarrito([]);
+          return;
+        }
+      }
+    } catch {
+      // Ignorar errores de lectura de respaldo
+    }
+  }, [turno?.id]);
+
+  useEffect(() => {
+    if (productos.length === 0) return;
+    setCarrito((prev) => {
+      if (prev.length === 0) return prev;
+      let cambio = false;
+      const actualizado: ItemCarrito[] = [];
+
+      for (const item of prev) {
+        if (!item.producto_id) {
+          actualizado.push(item);
+          continue;
+        }
+        const prod = productos.find((p) => p.id === item.producto_id);
+        if (!prod) {
+          cambio = true;
+          continue;
+        }
+        const precioActual = Number(prod.precio_venta);
+        const stockActual = Math.max(0, Number(prod.stock_actual || 0));
+        let cant = item.cantidad;
+
+        if (prod.controlar_stock) {
+          if (stockActual <= 0) {
+            cambio = true;
+            continue;
+          }
+          if (cant > stockActual) {
+            cant = stockActual;
+            cambio = true;
+          }
+        }
+
+        if (
+          precioActual !== item.precio_unitario ||
+          prod.nombre !== item.descripcion_producto ||
+          stockActual !== item.stock_actual ||
+          prod.controlar_stock !== item.controlar_stock
+        ) {
+          cambio = true;
+        }
+
+        actualizado.push({
+          ...item,
+          descripcion_producto: prod.nombre,
+          precio_unitario: precioActual,
+          cantidad: cant,
+          subtotal: cant * precioActual,
+          stock_actual: stockActual,
+          controlar_stock: prod.controlar_stock,
+        });
+      }
+
+      return cambio ? actualizado : prev;
+    });
+  }, [productos]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-bs-theme', 'light');

@@ -73,6 +73,7 @@ class ClienteController extends Controller
         $ventasFiadas = $cliente->ventas()
             ->with(['detalles', 'pagos', 'usuario:id,nombre'])
             ->where('estado', 'completada')
+            ->whereHas('pagos', fn ($q) => $q->where('metodo_pago', 'credito'))
             ->latest()
             ->get();
 

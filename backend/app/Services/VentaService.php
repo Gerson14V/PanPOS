@@ -128,7 +128,11 @@ class VentaService
                 'cliente_id' => $datos['cliente_id'] ?? null,
                 'total' => round($totalCalculado, 2),
                 'estado' => $estado,
-            ])->save();
+            ]);
+            if (!empty($datos['venta_en_espera_id']) && $estado === 'completada') {
+                $venta->created_at = now();
+            }
+            $venta->save();
 
             foreach ($detallesPreparados as $linea) {
                 DetalleVenta::create([

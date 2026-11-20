@@ -103,16 +103,34 @@ class TurnoCajaController extends Controller
             $datos['observaciones'] ?? null
         );
 
-        $respaldo = $this->backupService->generarRespaldo('cierre_turno');
-        $excel = $this->reporteExcelDiarioService->actualizarArchivoMaestro();
+        $advertencias = [];
+
+        try {
+            $respaldo = $this->backupService->generarRespaldo('cierre_turno');
+            $respaldo['guardado'] = true;
+        } catch (\Throwable $e) {
+            $respaldo = ['guardado' => false, 'archivo' => null, 'error' => $e->getMessage()];
+            $advertencias[] = 'El turno cerró correctamente, pero no se pudo generar el respaldo SQLite.';
+        }
+
+        try {
+            $excel = $this->reporteExcelDiarioService->actualizarArchivoMaestro();
+            if (!$excel['guardado']) {
+                $advertencias[] = 'No se pudo actualizar el Excel diario (verifique que no esté abierto en Excel).';
+            }
+        } catch (\Throwable $e) {
+            $excel = ['guardado' => false, 'ruta' => null];
+            $advertencias[] = 'No se pudo actualizar el Excel diario.';
+        }
 
         return response()->json([
             'turno' => $turnoCerrado,
             'respaldo' => $respaldo,
             'excel_diario' => [
-                'guardado' => $excel['guardado'],
-                'ruta' => $excel['ruta'],
+                'guardado' => (bool) ($excel['guardado'] ?? false),
+                'ruta' => $excel['ruta'] ?? null,
             ],
+            'advertencias' => $advertencias,
         ]);
     }
 }

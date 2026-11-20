@@ -182,11 +182,21 @@ export const ModuloCorteReportes: React.FC = () => {
 
     setCerrando(true);
     try {
-      const res = await api.post(`/turnos/${turno.id}/cerrar`, {
-        total_efectivo_contado: efectivoContadoFinal,
-        observaciones: observaciones || (hayDenominacionesLlenas ? 'Cierre con conteo de billetes y monedas' : ''),
-      });
-      alert(`Turno #${turno.id} cerrado con éxito.\nRespaldo BD: ${res.data.respaldo.archivo}\nExcel diario actualizado en: ${res.data.excel_diario?.ruta || 'Escritorio'}`);
+      const res = await api.post(
+        `/turnos/${turno.id}/cerrar`,
+        {
+          total_efectivo_contado: efectivoContadoFinal,
+          observaciones: observaciones || (hayDenominacionesLlenas ? 'Cierre con conteo de billetes y monedas' : ''),
+        },
+        { timeout: 60000 }
+      );
+      const msgBackup = res.data.respaldo?.guardado
+        ? `Respaldo BD: ${res.data.respaldo.archivo}`
+        : 'Respaldo BD: No se pudo generar';
+      const msgExcel = res.data.excel_diario?.guardado
+        ? `Excel diario actualizado en: ${res.data.excel_diario.ruta}`
+        : 'Excel diario: No se pudo actualizar (cierre el archivo si está abierto)';
+      alert(`Turno #${turno.id} cerrado con éxito.\n${msgBackup}\n${msgExcel}`);
       limpiarCarrito();
       setTurno(null);
       setUsuario(null);
@@ -218,10 +228,10 @@ export const ModuloCorteReportes: React.FC = () => {
   const mostrarCierreDeCajero = modoCorte === 'cajero' && !!turno && resumen && !resumen.sin_datos && resumen.turno?.estado === 'abierto';
 
   const entradasLista = (resumen?.movimientos_caja || []).filter(
-    (m: any) => m.tipo === 'entrada' || m.tipo === 'abono_cliente'
+    (m: any) => m.metodo_pago === 'efectivo' && (m.tipo === 'entrada' || m.tipo === 'abono_cliente')
   );
   const salidasLista = (resumen?.movimientos_caja || []).filter(
-    (m: any) => m.tipo === 'salida' || m.tipo === 'prestamo_cliente'
+    (m: any) => m.metodo_pago === 'efectivo' && (m.tipo === 'salida' || m.tipo === 'prestamo_cliente')
   );
 
   const ingresosContadoTotal =

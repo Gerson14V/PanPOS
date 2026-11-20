@@ -19,9 +19,9 @@ class ImpresionTicketService
             ];
         }
 
-        // Estructura lista para enviar por conector ESC/POS cuando se instale la impresora física
         return [
-            'impreso' => true,
+            'impreso' => false,
+            'mensaje' => 'Impresión ESC/POS pendiente de conectar controlador físico.',
             'impresora' => $config['nombre_impresora'] ?? 'POS-80',
             'ancho_mm' => (int) ($config['ancho_papel_mm'] ?? 80),
             'ticket_numero' => $venta->numero_ticket,

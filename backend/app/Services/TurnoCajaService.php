@@ -361,6 +361,14 @@ class TurnoCajaService
                 ]);
             }
 
+            $turnoBloqueado->ventas()
+                ->where('estado', 'en_espera')
+                ->update([
+                    'estado' => 'anulada',
+                    'motivo_anulacion' => 'Ticket en espera descartado automáticamente al cerrar turno',
+                    'fecha_anulacion' => now(),
+                ]);
+
             $resumen = $this->obtenerResumenTurno($turnoBloqueado);
             $esperado = $resumen['gaveta_efectivo']['efectivo_esperado'];
             $diferencia = round($efectivoContado - $esperado, 2);

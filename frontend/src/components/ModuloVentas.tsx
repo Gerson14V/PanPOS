@@ -126,6 +126,12 @@ export const ModuloVentas: React.FC = () => {
   }, [hayModalAbierto]);
 
   useEffect(() => {
+    if (carrito.length === 0 || !turno || !usuario) {
+      setVentaEnEsperaId(null);
+    }
+  }, [carrito.length, turno?.id, usuario?.id]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (modalCobro) { setModalCobro(false); return; }
@@ -184,6 +190,8 @@ export const ModuloVentas: React.FC = () => {
         } else if (e.key === 'Backspace') {
           inputScanRef.current?.focus();
           setBusqueda((prev) => prev.slice(0, -1));
+        } else if (e.key === ' ' && activeEl?.tagName === 'BUTTON') {
+          return;
         } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
           e.preventDefault();
           inputScanRef.current?.focus();

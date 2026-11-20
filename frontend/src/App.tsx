@@ -28,6 +28,10 @@ const MainLayout: React.FC = () => {
         setModalSalir(false);
         return;
       }
+      const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (modalSalir || activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') {
+        return;
+      }
       if (e.key === 'F1') {
         e.preventDefault();
         setModuloActivo('ventas');
@@ -69,10 +73,14 @@ const MainLayout: React.FC = () => {
     if (!turno) return;
     setCerrandoCaja(true);
     try {
-      const res = await api.post(`/turnos/${turno.id}/cerrar`, {
-        total_efectivo_contado: Number(efectivoContadoSalir),
-        observaciones: observacionesSalir || 'Cierre de turno desde botón Salir',
-      });
+      const res = await api.post(
+        `/turnos/${turno.id}/cerrar`,
+        {
+          total_efectivo_contado: Number(efectivoContadoSalir),
+          observaciones: observacionesSalir || 'Cierre de turno desde botón Salir',
+        },
+        { timeout: 60000 }
+      );
 
       limpiarCarrito();
       setModalSalir(false);
@@ -80,7 +88,14 @@ const MainLayout: React.FC = () => {
       setTurno(null);
       setUsuario(null);
       setModuloActivo('ventas');
-      alert(`Turno cerrado correctamente.\nRespaldo BD: ${res.data.respaldo.archivo}\nExcel diario actualizado en: ${res.data.excel_diario?.ruta || "Escritorio"}`);
+
+      const msgBackup = res.data.respaldo?.guardado
+        ? `Respaldo BD: ${res.data.respaldo.archivo}`
+        : 'Respaldo BD: No se pudo generar (revise ruta de respaldos)';
+      const msgExcel = res.data.excel_diario?.guardado
+        ? `Excel diario actualizado en: ${res.data.excel_diario.ruta}`
+        : 'Excel diario: No se pudo actualizar (cierre el archivo si está abierto)';
+      alert(`Turno cerrado correctamente.\n${msgBackup}\n${msgExcel}`);
     } catch (err: any) {
       alert(err.response?.data?.message || 'Error al cerrar el turno.');
     } finally {
