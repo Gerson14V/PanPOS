@@ -20,21 +20,6 @@
   --bs-border-color: var(--bakery-soft-border);
 }
 
-[data-bs-theme="dark"] {
-  --bakery-cream-bg: #1e1815;
-  --bakery-card-bg: #28201c;
-  --bakery-espresso: #16110e;
-  --bakery-espresso-light: #382b24;
-  --bakery-soft-cream: #332923;
-  --bakery-soft-cream-hover: #42352d;
-  --bakery-soft-border: #4a3c33;
-  --bakery-green: #3e824f;
-  --bakery-text: #efe8e0;
-
-  --bs-body-bg: var(--bakery-cream-bg);
-  --bs-body-color: var(--bakery-text);
-}
-
 body {
   background-color: var(--bakery-cream-bg) !important;
   color: var(--bakery-text);
@@ -82,7 +67,7 @@ body {
   color: #ffffff !important;
 }
 
-/* Tarjetas y contenedores con bordes suaves de 1px */
+/* Tarjetas y contenedores */
 .card {
   background-color: var(--bakery-card-bg) !important;
   border: 1px solid var(--bakery-soft-border) !important;
@@ -137,7 +122,7 @@ body {
   border-color: #bfa98e !important;
 }
 
-/* Botones Rápidos de Productos en Color Crema Suave (Sin amarillo ni iconos) */
+/* Botones Rápidos de Productos en Color Crema Suave */
 .btn-pan-rapido {
   background-color: var(--bakery-soft-cream) !important;
   border: 1px solid #d8c8b4 !important;
@@ -154,6 +139,19 @@ body {
 
 .btn-pan-rapido:active {
   transform: translateY(1px);
+}
+
+/* Tarjetas de iconos de Configuración */
+.btn-config-tile {
+  background-color: var(--bakery-soft-cream) !important;
+  border: 1px solid var(--bakery-soft-border) !important;
+  color: var(--bakery-text) !important;
+  border-radius: 10px !important;
+}
+
+.btn-config-tile:hover {
+  background-color: var(--bakery-soft-cream-hover) !important;
+  transform: translateY(-2px);
 }
 
 /* Botones de éxito / F12 Cobrar suavizados */
@@ -178,41 +176,39 @@ body {
   background-color: #fdf5f5 !important;
 }
 
-/* Tarjetas de iconos de Configuración adaptables a Modo Claro y Modo Oscuro */
-.btn-config-tile {
-  background-color: var(--bakery-soft-cream) !important;
-  border: 1px solid var(--bakery-soft-border) !important;
-  color: var(--bakery-text) !important;
-  border-radius: 10px !important;
+/* Marca de agua de baguettes artesanales fusionadas con el fondo blanco */
+.card-watermark-panes {
+  position: relative;
+  overflow: hidden;
 }
 
-.btn-config-tile:hover {
-  background-color: var(--bakery-soft-cream-hover) !important;
-  transform: translateY(-2px);
+.card-watermark-panes::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url('/baguettes.png');
+  background-repeat: no-repeat;
+  background-position: center 78%;
+  background-size: 460px auto;
+  opacity: 0.28;
+  filter: blur(0.4px) saturate(1.25);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  z-index: 0;
 }
 
-/* Contraste legible para botones en Modo Oscuro */
-[data-bs-theme="dark"] .btn-outline-secondary,
-[data-bs-theme="dark"] .btn-outline-primary {
-  color: #f5ebe1 !important;
-  border-color: #7a6352 !important;
-  background-color: rgba(255, 255, 255, 0.05) !important;
+.card-watermark-panes .table-responsive {
+  position: relative;
+  z-index: 1;
 }
 
-[data-bs-theme="dark"] .btn-outline-secondary:hover,
-[data-bs-theme="dark"] .btn-outline-primary:hover {
-  background-color: #4a3a2e !important;
-  color: #ffffff !important;
+.card-watermark-panes .table,
+.card-watermark-panes .table tbody,
+.card-watermark-panes .table tbody tr,
+.card-watermark-panes .table tbody td {
+  background-color: transparent !important;
 }
 
-[data-bs-theme="dark"] .btn-outline-success {
-  color: #8ce09a !important;
-  border-color: #3d804d !important;
-  background-color: rgba(61, 128, 77, 0.15) !important;
-}
-
-[data-bs-theme="dark"] .btn-outline-danger {
-  color: #f59898 !important;
-  border-color: #a34646 !important;
-  background-color: rgba(163, 70, 70, 0.15) !important;
+.card-watermark-panes .table-hover tbody tr:hover td {
+  background-color: rgba(140, 98, 57, 0.06) !important;
 }

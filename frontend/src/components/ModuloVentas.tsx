@@ -386,7 +386,7 @@ export const ModuloVentas: React.FC = () => {
       {/* Área Principal: Tabla de Venta + Cuadrícula Crema de Botones Rápidos */}
       <div className="row g-3">
         <div className={mostrarRapidos && botonesRapidos.length > 0 ? 'col-lg-8' : 'col-12'}>
-          <div className="card shadow-sm" style={{ minHeight: '58vh' }}>
+          <div className="card shadow-sm card-watermark-panes" style={{ minHeight: '58vh' }}>
             <div className="table-responsive">
               <table className="table table-hover align-middle mb-0">
                 <thead className="table-dark">
@@ -404,7 +404,7 @@ export const ModuloVentas: React.FC = () => {
                   {carrito.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="text-center text-muted py-5">
-                        <div className="display-3 mb-2 opacity-50">🧺🥖</div>
+                        
                         <div className="fs-5 fw-semibold">
                           Pase un producto por el lector en cualquier momento, busque por nombre o toque un botón rápido.
                         </div>

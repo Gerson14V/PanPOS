@@ -10,7 +10,7 @@ import { ModuloConfiguracion } from './components/ModuloConfiguracion';
 import { api } from './api/client';
 
 const MainLayout: React.FC = () => {
-  const { usuario, setUsuario, turno, setTurno, limpiarCarrito, configuracion, tema, alternarTema } = usePos();
+  const { usuario, setUsuario, turno, setTurno, limpiarCarrito, configuracion } = usePos();
   const [moduloActivo, setModuloActivo] = useState<'ventas' | 'clientes' | 'productos_inventario' | 'proveedores' | 'corte' | 'config'>('ventas');
 
   // Estados para el modal del botón "Salir" (Cierre de Turno y Salida del Sistema)
@@ -143,9 +143,7 @@ const MainLayout: React.FC = () => {
           </div>
 
           <div className="d-flex align-items-center gap-2 text-white pb-1">
-            <button className="btn btn-sm btn-outline-light" onClick={alternarTema}>
-              {tema === 'light' ? '🌙 Oscuro' : '☀️ Claro'}
-            </button>
+            
             {usuario && (
               <>
                 <span className="badge bg-light text-dark fs-6 px-3 py-2">

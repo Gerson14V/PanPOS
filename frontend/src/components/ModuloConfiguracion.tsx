@@ -23,7 +23,7 @@ type SeccionConfig =
   | 'respaldo';
 
 export const ModuloConfiguracion: React.FC = () => {
-  const { configuracion, recargarCatalogos, tema, alternarTema } = usePos();
+  const { configuracion, recargarCatalogos } = usePos();
   const [seccionActiva, setSeccionActiva] = useState<SeccionConfig>('menu');
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [formConfig, setFormConfig] = useState<Record<string, string>>({});
@@ -253,12 +253,7 @@ export const ModuloConfiguracion: React.FC = () => {
                     Habilitar Botón de Auditoría Kardex de Inventario para el Administrador
                   </label>
                 </div>
-                <div className="p-3 bg-body-tertiary rounded d-flex justify-content-between align-items-center">
-                  <span className="fw-bold">Tema Visual de la Interfaz:</span>
-                  <button type="button" className="btn btn-primary fw-bold" onClick={alternarTema}>
-                    {tema === 'light' ? '🌙 Activar Modo Oscuro' : '☀️ Activar Modo Claro'}
-                  </button>
-                </div>
+                
               </div>
             )}
 
