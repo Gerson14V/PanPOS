@@ -18,7 +18,6 @@ export const ModuloProductosInventario: React.FC = () => {
   const [precioVenta, setPrecioVenta] = useState('');
   const [controlarStock, setControlarStock] = useState(false);
   const [stockActual, setStockActual] = useState('0');
-  const [stockMinimo, setStockMinimo] = useState('5');
   const [botonRapido, setBotonRapido] = useState(false);
 
   const [prodAjuste, setProdAjuste] = useState<Producto | null>(null);
@@ -60,7 +59,7 @@ export const ModuloProductosInventario: React.FC = () => {
       precio_venta: Number(precioVenta),
       controlar_stock: controlarStock,
       stock_actual: Number(stockActual),
-      stock_minimo: Number(stockMinimo),
+      stock_minimo: 0,
       mostrar_boton_rapido: botonRapido,
       usuario_id: usuario?.id,
     };
@@ -101,7 +100,6 @@ export const ModuloProductosInventario: React.FC = () => {
     setPrecioVenta(String(p.precio_venta));
     setControlarStock(p.controlar_stock);
     setStockActual(String(p.stock_actual));
-    setStockMinimo(String(p.stock_minimo));
     setBotonRapido(p.mostrar_boton_rapido);
   };
 
@@ -344,8 +342,8 @@ export const ModuloProductosInventario: React.FC = () => {
                       <td className="text-end fw-bold text-success">₡{Number(p.precio_venta).toLocaleString()}</td>
                       <td className="text-center">
                         {p.controlar_stock ? (
-                          <span className={`badge fs-6 ${p.stock_actual <= p.stock_minimo ? 'bg-danger' : 'bg-info text-dark'}`}>
-                            {p.stock_actual} u. (Mín: {p.stock_minimo})
+                          <span className={`badge fs-6 ${p.stock_actual <= 0 ? 'bg-danger' : 'bg-info text-dark'}`}>
+                            {p.stock_actual} u.
                           </span>
                         ) : (
                           <span className="badge bg-success">∞ Infinito</span>

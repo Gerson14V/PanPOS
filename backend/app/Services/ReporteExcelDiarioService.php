@@ -153,7 +153,13 @@ class ReporteExcelDiarioService
         $guardado = false;
 
         try {
-            $guardado = @file_put_contents($ruta, $html) !== false;
+            $rutaTmp = $ruta . '.tmp';
+            if (@file_put_contents($rutaTmp, $html, LOCK_EX) !== false) {
+                $guardado = @rename($rutaTmp, $ruta);
+                if (!$guardado) {
+                    @unlink($rutaTmp);
+                }
+            }
         } catch (\Throwable $e) {
             $guardado = false;
         }

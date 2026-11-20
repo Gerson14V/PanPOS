@@ -29,6 +29,7 @@ export const ModuloVentas: React.FC = () => {
   const [modalEspera, setModalEspera] = useState(false);
   const [ventasEnEspera, setVentasEnEspera] = useState<any[]>([]);
   const [ventaEnEsperaId, setVentaEnEsperaId] = useState<number | null>(null);
+  const [procesandoVenta, setProcesandoVenta] = useState(false);
 
   // Modal Ventas del Día
   const [modalVentasDia, setModalVentasDia] = useState(false);
@@ -50,6 +51,17 @@ export const ModuloVentas: React.FC = () => {
   const [errorMovCaja, setErrorMovCaja] = useState<string | null>(null);
 
   const totalVenta = carrito.reduce((acc, i) => acc + i.subtotal, 0);
+  const sumaMixto =
+    (Number(montoEfectivoMixto) || 0) +
+    (Number(montoTarjetaMixto) || 0) +
+    (Number(montoSinpeMixto) || 0) +
+    (Number(montoCreditoMixto) || 0);
+  const faltaClienteCredito =
+    (metodoPrincipal === 'credito' || (metodoPrincipal === 'mixto' && (Number(montoCreditoMixto) || 0) > 0)) &&
+    !clienteId;
+  const mixtoCuadra = metodoPrincipal !== 'mixto' || Math.abs(sumaMixto - totalVenta) < 0.01;
+  const efectivoSuficiente = metodoPrincipal !== 'efectivo' || (Number(pagaCon) || 0) >= totalVenta;
+  const cobroValido = !faltaClienteCredito && mixtoCuadra && efectivoSuficiente;
   const mostrarRapidos = (configuracion['panel_botones_rapidos'] ?? '1') === '1';
   const botonesRapidos = productos.filter((p) => p.mostrar_boton_rapido);
 
@@ -110,6 +122,13 @@ export const ModuloVentas: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (modalCobro) { setModalCobro(false); return; }
+        if (modalComun) { setModalComun(false); return; }
+        if (modalCajaMov) { setModalCajaMov(null); return; }
+        if (modalEspera) { setModalEspera(false); return; }
+        if (modalVentasDia) { setModalVentasDia(false); return; }
+      }
       if (e.key === 'F12') {
         e.preventDefault();
         if (carrito.length > 0 && !hayModalAbierto) abrirModalCobro();
@@ -193,9 +212,13 @@ export const ModuloVentas: React.FC = () => {
 
   const abrirVentasDelDia = async () => {
     if (!turno) return;
-    const res = await api.get(`/ventas?turno_id=${turno.id}`);
-    setVentasDia(res.data);
-    setModalVentasDia(true);
+    try {
+      const res = await api.get(`/ventas?turno_id=${turno.id}`);
+      setVentasDia(res.data);
+      setModalVentasDia(true);
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'No se pudieron cargar las ventas del día. Verifique la conexión con el servidor.' });
+    }
   };
 
   const eliminarTicketDelDia = async (ventaId: number, numeroTicket: number) => {
@@ -216,7 +239,8 @@ export const ModuloVentas: React.FC = () => {
   };
 
   const confirmarVenta = async (estado: 'completada' | 'en_espera') => {
-    if (!turno || !usuario || carrito.length === 0) return;
+    if (procesandoVenta || !turno || !usuario || carrito.length === 0) return;
+    if (estado === 'completada' && !cobroValido) return;
 
     let pagos: PagoItem[] = [];
 
@@ -242,6 +266,7 @@ export const ModuloVentas: React.FC = () => {
       }
     }
 
+    setProcesandoVenta(true);
     try {
       await api.post('/ventas', {
         venta_en_espera_id: ventaEnEsperaId,
@@ -273,14 +298,20 @@ export const ModuloVentas: React.FC = () => {
         tipo: 'danger',
         texto: err.response?.data?.message || 'Error al procesar la venta.',
       });
+    } finally {
+      setProcesandoVenta(false);
     }
   };
 
   const abrirTicketsEspera = async () => {
     if (!turno) return;
-    const res = await api.get(`/ventas?turno_id=${turno.id}&estado=en_espera`);
-    setVentasEnEspera(res.data);
-    setModalEspera(true);
+    try {
+      const res = await api.get(`/ventas?turno_id=${turno.id}&estado=en_espera`);
+      setVentasEnEspera(res.data);
+      setModalEspera(true);
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'No se pudieron cargar los tickets en espera.' });
+    }
   };
 
   const recuperarTicketEspera = (venta: any) => {
@@ -795,13 +826,32 @@ export const ModuloVentas: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {faltaClienteCredito && (
+                  <div className="alert alert-warning py-2 mt-3 mb-0 small fw-bold">
+                    ⚠️ Debe seleccionar un cliente para registrar una venta a crédito.
+                  </div>
+                )}
+                {!mixtoCuadra && (
+                  <div className="alert alert-warning py-2 mt-3 mb-0 small fw-bold">
+                    ⚠️ La suma del pago mixto (₡{sumaMixto.toLocaleString()}) debe coincidir con el total (₡{totalVenta.toLocaleString()}). Diferencia: ₡{(totalVenta - sumaMixto).toLocaleString()}.
+                  </div>
+                )}
+                {!efectivoSuficiente && (
+                  <div className="alert alert-warning py-2 mt-3 mb-0 small fw-bold">
+                    ⚠️ El monto recibido en efectivo es menor al total a cobrar.
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary btn-lg" onClick={() => setModalCobro(false)}>
+                <button className="btn btn-secondary btn-lg" disabled={procesandoVenta} onClick={() => setModalCobro(false)}>
                   Cancelar (ESC)
                 </button>
-                <button className="btn btn-success btn-lg px-5 fw-bold" onClick={() => confirmarVenta('completada')}>
-                  Confirmar y Registrar Venta
+                <button
+                  className="btn btn-success btn-lg px-5 fw-bold"
+                  disabled={procesandoVenta || !cobroValido}
+                  onClick={() => confirmarVenta('completada')}
+                >
+                  {procesandoVenta ? 'Registrando venta...' : 'Confirmar y Registrar Venta'}
                 </button>
               </div>
             </div>

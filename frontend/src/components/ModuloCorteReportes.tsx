@@ -49,22 +49,34 @@ export const ModuloCorteReportes: React.FC = () => {
   const [barraHover, setBarraHover] = useState<{ etiqueta: string; monto: number; cantidad: number } | null>(null);
 
   const cargarHistorialTurnos = async (fecha = fechaFiltroTurnos) => {
-    const url = fecha ? `/turnos?fecha=${fecha}` : '/turnos';
-    const res = await api.get(url);
-    setHistorialTurnos(res.data);
-    if (res.data.length > 0 && fecha) {
-      setTurnoVisualizadoId(res.data[0].id);
+    try {
+      const url = fecha ? `/turnos?fecha=${fecha}` : '/turnos';
+      const res = await api.get(url);
+      setHistorialTurnos(res.data);
+      if (res.data.length > 0 && fecha) {
+        setTurnoVisualizadoId(res.data[0].id);
+      }
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'No se pudo cargar el historial de turnos.' });
     }
   };
 
   const cargarDetalleTurno = async (idTurno: number) => {
-    const resCorte = await api.get(`/turnos/${idTurno}/resumen`);
-    setResumen(resCorte.data);
+    try {
+      const resCorte = await api.get(`/turnos/${idTurno}/resumen`);
+      setResumen(resCorte.data);
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'Error al cargar el resumen del turno.' });
+    }
   };
 
   const cargarReportePeriodo = async (fDesde = desde, fHasta = hasta) => {
-    const res = await api.get(`/reportes/ventas-periodo?desde=${fDesde}&hasta=${fHasta}`);
-    setReporte(res.data);
+    try {
+      const res = await api.get(`/reportes/ventas-periodo?desde=${fDesde}&hasta=${fHasta}`);
+      setReporte(res.data);
+    } catch {
+      setMensaje({ tipo: 'danger', texto: 'Error al consultar el reporte del período.' });
+    }
   };
 
   useEffect(() => {
@@ -164,7 +176,8 @@ export const ModuloCorteReportes: React.FC = () => {
 
   const descargarExcelCorte = () => {
     if (!turnoVisualizadoId) return;
-    window.open(`http://127.0.0.1:8000/api/turnos/${turnoVisualizadoId}/exportar-excel`, '_blank');
+    const baseUrl = (api.defaults.baseURL || 'http://127.0.0.1:8000/api').replace(/\/$/, '');
+    window.open(`${baseUrl}/turnos/${turnoVisualizadoId}/exportar-excel`, '_blank');
   };
 
   const esTurnoActualAbierto = resumen?.turno?.estado === 'abierto' && resumen?.turno?.id === turno?.id;
