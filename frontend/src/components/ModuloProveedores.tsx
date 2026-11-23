@@ -113,7 +113,7 @@ export const ModuloProveedores: React.FC = () => {
         <div className="col-lg-4">
           <div className="card shadow-sm border-0 mb-3">
             <div className="card-header bg-primary text-white fw-bold">
-              {editando ? '✏️ Renombrar Proveedor' : '🚚 Registrar Nuevo Proveedor / Departamento'}
+              {editando ? <><i className="bi bi-pencil-square me-1" />Renombrar Proveedor</> : <><i className="bi bi-truck me-1" />Registrar Nuevo Proveedor / Departamento</>}
             </div>
             <form className="card-body" onSubmit={guardarProveedor}>
               <div className="mb-3">
@@ -187,7 +187,7 @@ export const ModuloProveedores: React.FC = () => {
         <div className="col-lg-8">
           <div className="card shadow-sm border-0 mb-3">
             <div className="card-header bg-dark text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
-              <span className="fw-bold">📊 Ranking de Ventas por Proveedor / Departamento</span>
+              <span className="fw-bold"><i className="bi bi-bar-chart-fill me-1" />Ranking de Ventas por Proveedor / Departamento</span>
               <div className="btn-group btn-group-sm">
                 <button className="btn btn-outline-light" onClick={() => aplicarRangoRapido('hoy')}>
                   Hoy
@@ -216,7 +216,7 @@ export const ModuloProveedores: React.FC = () => {
                     className="btn btn-primary w-100 fw-bold"
                     onClick={() => consultarVentasProveedores(desde, hasta)}
                   >
-                    🔍 Filtrar Período
+                    <i className="bi bi-search me-1" />Filtrar Período
                   </button>
                 </div>
               </div>
@@ -227,7 +227,7 @@ export const ModuloProveedores: React.FC = () => {
                   <div className="row g-2 mb-3">
                     <div className="col-md-4">
                       <div className="p-3 border rounded bg-warning-subtle h-100">
-                        <div className="small fw-bold text-uppercase text-muted">🏆 Proveedor con Más Productos Vendidos</div>
+                        <div className="small fw-bold text-uppercase text-muted"><i className="bi bi-trophy-fill me-1" />Proveedor con Más Productos Vendidos</div>
                         {proveedorLider ? (
                           <>
                             <div className="fs-5 fw-bolder text-dark">{proveedorLider.departamento}</div>
@@ -283,7 +283,7 @@ export const ModuloProveedores: React.FC = () => {
                               onClick={() => setProveedorSeleccionadoId(d.id)}
                             >
                               <td className="fw-bold">
-                                {idx === 0 && d.unidades_vendidas > 0 ? '🏆' : `#${idx + 1}`}
+                                {idx === 0 && d.unidades_vendidas > 0 ? <i className="bi bi-trophy-fill text-warning" /> : `#${idx + 1}`}
                               </td>
                               <td>
                                 <div className="fw-bold">{d.departamento}</div>
@@ -330,7 +330,7 @@ export const ModuloProveedores: React.FC = () => {
             <div className="card shadow-sm border-0">
               <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <span className="fw-bold">
-                  📦 Todos los Productos de "{proveedorDetalle.departamento}" (Ordenados por Más Vendidos)
+                  <i className="bi bi-box-seam me-1" />Todos los Productos de "{proveedorDetalle.departamento}" (Ordenados por Más Vendidos)
                 </span>
                 <span className="badge bg-light text-dark">
                   {proveedorDetalle.productos.length} productos en total
@@ -359,7 +359,9 @@ export const ModuloProveedores: React.FC = () => {
                       proveedorDetalle.productos.map((prod: any, idx: number) => (
                         <tr key={prod.id} className={prod.unidades_vendidas === 0 ? 'text-muted' : ''}>
                           <td className="fw-bold">
-                            {idx === 0 && prod.unidades_vendidas > 0 ? '🥇' : idx === 1 && prod.unidades_vendidas > 0 ? '🥈' : idx === 2 && prod.unidades_vendidas > 0 ? '🥉' : `#${idx + 1}`}
+                            {idx < 3 && prod.unidades_vendidas > 0 ? (
+                              <i className={`bi bi-award-fill ${['text-warning', 'text-secondary', 'text-danger-emphasis'][idx]}`} title={`#${idx + 1}`} />
+                            ) : `#${idx + 1}`}
                           </td>
                           <td><span className="badge bg-secondary">{prod.codigo_barras}</span></td>
                           <td className="fw-semibold">{prod.nombre}</td>

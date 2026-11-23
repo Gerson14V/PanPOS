@@ -318,7 +318,7 @@ export const ModuloVentas: React.FC = () => {
       await recargarCatalogos();
       setMensaje({
         tipo: 'success',
-        texto: estado === 'completada' ? '✅ Venta registrada correctamente.' : '⏸️ Ticket guardado en espera (F6).',
+        texto: estado === 'completada' ? 'Venta registrada correctamente.' : 'Ticket guardado en espera (F6).',
       });
       inputScanRef.current?.focus();
     } catch (err: any) {
@@ -415,9 +415,11 @@ export const ModuloVentas: React.FC = () => {
 
       {/* Barra de búsqueda y botones de operación */}
       <div className="row g-2 mb-2 align-items-center">
-        <div className="col-md-5 position-relative">
+        <div className="col-lg-6 col-xxl-5 position-relative">
           <form onSubmit={handleScanSubmit} className="input-group input-group-lg shadow-sm">
-            <span className="input-group-text bg-primary text-white fw-bold">Código/Nombre</span>
+            <span className="input-group-text bg-primary text-white fw-bold" title="Código/Nombre">
+              <i className="bi bi-upc-scan" />
+            </span>
             <input
               ref={inputScanRef}
               type="text"
@@ -457,13 +459,13 @@ export const ModuloVentas: React.FC = () => {
           )}
         </div>
 
-        <div className="col-md-7 d-flex flex-wrap gap-2 justify-content-md-end">
+        <div className="col-lg-6 col-xxl-7 d-flex flex-wrap gap-2 justify-content-lg-end panpos-acciones-venta">
           
           <button className="btn btn-accion-artesanal" onClick={() => setModalComun(true)}>
             + Artículo Común
           </button>
           <button className="btn btn-accion-artesanal" onClick={() => confirmarVenta('en_espera')} disabled={carrito.length === 0}>
-            ⏸ En Espera
+            <i className="bi bi-pause-circle me-1" />En Espera
           </button>
           <button className="btn btn-accion-artesanal" onClick={abrirTicketsEspera}>
             F6 Recuperar
@@ -564,7 +566,7 @@ export const ModuloVentas: React.FC = () => {
                               inputScanRef.current?.focus();
                             }}
                           >
-                            ✕
+                            <i className="bi bi-x-lg" />
                           </button>
                         </td>
                       </tr>
@@ -580,7 +582,7 @@ export const ModuloVentas: React.FC = () => {
           <div className="col-lg-4">
             <div className="card shadow-sm h-100">
               <div className="card-header bg-primary text-white fw-bold d-flex align-items-center justify-content-between">
-                <span>🥖 Botones Rápidos de Panadería</span>
+                <span><i className="bi bi-basket2-fill me-1" />Botones Rápidos de Panadería</span>
                 <span className="badge bg-warning text-dark">{botonesRapidos.length} rápidos</span>
               </div>
               <div className="card-body p-3">
@@ -627,7 +629,7 @@ export const ModuloVentas: React.FC = () => {
                       inputScanRef.current?.focus();
                     }}
                   >
-                    🗑 Vaciar Ticket
+                    <i className="bi bi-trash me-1" />Vaciar Ticket
                   </button>
                 )}
               </div>
@@ -648,14 +650,14 @@ export const ModuloVentas: React.FC = () => {
             disabled={carrito.length === 0}
             onClick={abrirModalCobro}
           >
-            <span>🛒 F12 - Cobrar</span>
+            <span><i className="bi bi-cart-check-fill me-1" />F12 - Cobrar</span>
           </button>
         </div>
       </div>
 
       <div className="d-flex justify-content-end mt-2">
         <button className="btn btn-accion-artesanal px-4 py-2 fw-bold" onClick={abrirVentasDelDia}>
-          🧾 Ventas del Día
+          <i className="bi bi-receipt me-1" />Ventas del Día
         </button>
       </div>
 
@@ -666,7 +668,7 @@ export const ModuloVentas: React.FC = () => {
             <div className="modal-content">
               <div className="modal-header bg-primary text-white">
                 <h5 className="modal-title fw-bold">
-                  🧾 Ventas del Día — Turno #{turno?.id} ({ventasDia.length} tickets)
+                  <i className="bi bi-receipt me-1" />Ventas del Día — Turno #{turno?.id} ({ventasDia.length} tickets)
                 </h5>
                 <button type="button" className="btn-close btn-close-white" onClick={() => setModalVentasDia(false)} />
               </div>
@@ -737,7 +739,7 @@ export const ModuloVentas: React.FC = () => {
                                 disabled={anulandoId === v.id}
                                 onClick={() => eliminarTicketDelDia(v.id, v.numero_ticket)}
                               >
-                                {anulandoId === v.id ? 'Anulando...' : '🗑 Eliminar'}
+                                {anulandoId === v.id ? 'Anulando...' : <><i className="bi bi-trash me-1" />Eliminar</>}
                               </button>
                             )}
                           </td>
@@ -882,17 +884,17 @@ export const ModuloVentas: React.FC = () => {
                 )}
                 {faltaClienteCredito && (
                   <div className="alert alert-warning py-2 mt-3 mb-0 small fw-bold">
-                    ⚠️ Debe seleccionar un cliente para registrar una venta a crédito.
+                    <i className="bi bi-exclamation-triangle-fill me-1" />Debe seleccionar un cliente para registrar una venta a crédito.
                   </div>
                 )}
                 {!mixtoCuadra && (
                   <div className="alert alert-warning py-2 mt-3 mb-0 small fw-bold">
-                    ⚠️ La suma del pago mixto (₡{sumaMixto.toLocaleString()}) debe coincidir con el total (₡{totalVenta.toLocaleString()}). Diferencia: ₡{(totalVenta - sumaMixto).toLocaleString()}.
+                    <i className="bi bi-exclamation-triangle-fill me-1" />La suma del pago mixto (₡{sumaMixto.toLocaleString()}) debe coincidir con el total (₡{totalVenta.toLocaleString()}). Diferencia: ₡{(totalVenta - sumaMixto).toLocaleString()}.
                   </div>
                 )}
                 {!efectivoSuficiente && (
                   <div className="alert alert-warning py-2 mt-3 mb-0 small fw-bold">
-                    ⚠️ El monto recibido en efectivo es menor al total a cobrar.
+                    <i className="bi bi-exclamation-triangle-fill me-1" />El monto recibido en efectivo es menor al total a cobrar.
                   </div>
                 )}
               </div>

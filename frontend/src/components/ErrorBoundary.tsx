@@ -29,7 +29,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
       return (
         <div className="container vh-100 d-flex align-items-center justify-content-center">
           <div className="card shadow p-4 text-center" style={{ maxWidth: '480px' }}>
-            <h4 className="fw-bold text-danger mb-2">⚠️ Se detectó un error en pantalla</h4>
+            <h4 className="fw-bold text-danger mb-2"><i className="bi bi-exclamation-triangle-fill me-1" />Se detectó un error en pantalla</h4>
             <p className="text-muted small mb-3">
               Sus ventas ya cobradas están seguras en la base de datos. Puede recargar la caja para continuar.
             </p>
@@ -38,10 +38,10 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
             </div>
             <div className="d-flex gap-2 justify-content-center">
               <button className="btn btn-primary fw-bold" onClick={() => window.location.reload()}>
-                🔄 Recargar Caja
+                <i className="bi bi-arrow-clockwise me-1" />Recargar Caja
               </button>
               <button className="btn btn-outline-danger fw-bold" onClick={this.recargarLimpio}>
-                🧹 Limpiar Carrito y Recargar
+                <i className="bi bi-eraser me-1" />Limpiar Carrito y Recargar
               </button>
             </div>
           </div>

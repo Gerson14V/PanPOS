@@ -64,7 +64,7 @@ export const ModuloClientes: React.FC = () => {
     if (Number(cliente.saldo_deudor) > 0) {
       setAlerta({
         tipo: 'danger',
-        texto: `⚠️ No se puede eliminar a "${cliente.nombre}" porque tiene una deuda pendiente de ₡${Number(
+        texto: `No se puede eliminar a "${cliente.nombre}" porque tiene una deuda pendiente de ₡${Number(
           cliente.saldo_deudor
         ).toLocaleString()}. Debe saldar su cuenta primero.`,
       });
@@ -128,12 +128,12 @@ export const ModuloClientes: React.FC = () => {
 
     if (modalOperacion === 'abono_cliente') {
       if (deudaCliente <= 0) {
-        setErrorModal(`⚠️ ${clienteSeleccionado.nombre} no tiene deuda pendiente (Saldo: ₡0).`);
+        setErrorModal(`${clienteSeleccionado.nombre} no tiene deuda pendiente (Saldo: ₡0).`);
         return;
       }
       if (monto > deudaCliente) {
         setErrorModal(
-          `⚠️ No se puede abonar más plata de la que se debe. Deuda actual: ₡${deudaCliente.toLocaleString()} (Intentó abonar: ₡${monto.toLocaleString()}).`
+          `No se puede abonar más plata de la que se debe. Deuda actual: ₡${deudaCliente.toLocaleString()} (Intentó abonar: ₡${monto.toLocaleString()}).`
         );
         return;
       }
@@ -142,7 +142,7 @@ export const ModuloClientes: React.FC = () => {
     if (modalOperacion === 'prestamo_cliente' && metodoOp === 'efectivo') {
       if (monto > efectivoDisponibleCaja) {
         setErrorModal(
-          `⚠️ No hay suficiente efectivo en caja para este préstamo. Efectivo disponible actual en gaveta: ₡${efectivoDisponibleCaja.toLocaleString()} (Intentó prestar: ₡${monto.toLocaleString()}).`
+          `No hay suficiente efectivo en caja para este préstamo. Efectivo disponible actual en gaveta: ₡${efectivoDisponibleCaja.toLocaleString()} (Intentó prestar: ₡${monto.toLocaleString()}).`
         );
         return;
       }
@@ -169,7 +169,7 @@ export const ModuloClientes: React.FC = () => {
         err.response?.data?.errors?.monto?.[0] ||
         err.response?.data?.message ||
         'No se pudo procesar la operación.';
-      setErrorModal(`⚠️ ${msg}`);
+      setErrorModal(msg);
     } finally {
       setProcesandoOp(false);
     }
@@ -278,19 +278,19 @@ export const ModuloClientes: React.FC = () => {
                     disabled={Number(clienteSeleccionado.saldo_deudor) <= 0}
                     onClick={() => abrirModalOperacion('abono_cliente')}
                   >
-                    💵 Abonar a Deuda
+                    <i className="bi bi-cash-stack me-1" />Abonar a Deuda
                   </button>
                   <button
                     className="btn btn-warning fw-bold"
                     onClick={() => abrirModalOperacion('prestamo_cliente')}
                   >
-                    🤝 Prestar Efectivo de Caja
+                    <i className="bi bi-cash-coin me-1" />Prestar Efectivo de Caja
                   </button>
                   <button
                     className="btn btn-outline-danger fw-bold"
                     onClick={() => eliminarCliente(clienteSeleccionado)}
                   >
-                    🗑 Eliminar Cliente
+                    <i className="bi bi-trash me-1" />Eliminar Cliente
                   </button>
                 </div>
               </div>

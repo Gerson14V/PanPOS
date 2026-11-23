@@ -276,23 +276,23 @@ export const ModuloCorteReportes: React.FC = () => {
             className={`btn fw-bold ${vista === 'corte' ? 'btn-primary' : 'btn-outline-primary'}`}
             onClick={() => setVista('corte')}
           >
-            ✂️ Corte de Caja
+            <i className="bi bi-scissors me-1" />Corte de Caja
           </button>
           <button
             className={`btn fw-bold ${vista === 'reportes' ? 'btn-primary' : 'btn-outline-primary'}`}
             onClick={() => setVista('reportes')}
           >
-            📈 Reportes y Gráficos
+            <i className="bi bi-graph-up me-1" />Reportes y Gráficos
           </button>
         </div>
 
         {vista === 'corte' && (
           <div className="d-flex flex-wrap gap-2">
             <button className="btn btn-outline-secondary fw-bold" onClick={() => window.print()}>
-              🖨️ Imprimir Corte
+              <i className="bi bi-printer me-1" />Imprimir Corte
             </button>
             <button className="btn btn-success fw-bold" onClick={descargarExcelCorte}>
-              📥 Actualizar Excel Diario (.XLS)
+              <i className="bi bi-file-earmark-excel me-1" />Actualizar Excel Diario (.XLS)
             </button>
           </div>
         )}
@@ -313,7 +313,7 @@ export const ModuloCorteReportes: React.FC = () => {
                       setModoCorte('cajero');
                     }}
                   >
-                    👤 Corte de Cajero (Turno #{turno.id})
+                    <i className="bi bi-person-fill me-1" />Corte de Cajero (Turno #{turno.id})
                   </button>
                 )}
 
@@ -327,7 +327,7 @@ export const ModuloCorteReportes: React.FC = () => {
                     setMostrarConteo(false);
                   }}
                 >
-                  📅 Corte del Día (Hoy)
+                  <i className="bi bi-calendar-day me-1" />Corte del Día (Hoy)
                 </button>
 
                 <span className="small fw-bold text-muted ms-2">Ver corte de otro día:</span>
@@ -462,7 +462,7 @@ export const ModuloCorteReportes: React.FC = () => {
                       </span>
                     </div>
 
-                    <h5 className="fw-bold text-secondary mb-3">🗄️ Dinero en Caja</h5>
+                    <h5 className="fw-bold text-secondary mb-3"><i className="bi bi-database me-1" />Dinero en Caja</h5>
                     <table className="table table-sm table-borderless mb-4">
                       <tbody>
                         <tr>
@@ -498,7 +498,7 @@ export const ModuloCorteReportes: React.FC = () => {
                       </tbody>
                     </table>
 
-                    <h5 className="fw-bold text-secondary mb-2">⬇️ Entradas de Efectivo y Abonos</h5>
+                    <h5 className="fw-bold text-secondary mb-2"><i className="bi bi-arrow-down-circle me-1" />Entradas de Efectivo y Abonos</h5>
                     {entradasLista.length === 0 ? (
                       <p className="text-muted small ps-3 fst-italic">- No hubo Entradas en Efectivo -</p>
                     ) : (
@@ -525,14 +525,14 @@ export const ModuloCorteReportes: React.FC = () => {
                   <div className="col-lg-6">
                     {usuario?.rol === 'admin' && (
                       <div className="d-flex justify-content-between align-items-baseline border-bottom pb-2 mb-4">
-                        <span className="fs-4 fw-bold text-success">📊 Ganancia</span>
+                        <span className="fs-4 fw-bold text-success"><i className="bi bi-bar-chart-fill me-1" />Ganancia</span>
                         <span className="fs-3 fw-bolder text-success">
                           ₡{Number(resumen.ganancia_bruta_total).toLocaleString('es-CR', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                     )}
 
-                    <h5 className="fw-bold text-secondary mb-3">🛒 Ventas</h5>
+                    <h5 className="fw-bold text-secondary mb-3"><i className="bi bi-cart-check-fill me-1" />Ventas</h5>
                     <table className="table table-sm table-borderless mb-4">
                       <tbody>
                         <tr className="text-success">
@@ -564,7 +564,7 @@ export const ModuloCorteReportes: React.FC = () => {
                       </tbody>
                     </table>
 
-                    <h5 className="fw-bold text-secondary mb-2">💵 Ingresos de Contado</h5>
+                    <h5 className="fw-bold text-secondary mb-2"><i className="bi bi-cash-stack me-1" />Ingresos de Contado</h5>
                     <table className="table table-sm table-borderless mb-4">
                       <tbody>
                         <tr>
@@ -576,7 +576,7 @@ export const ModuloCorteReportes: React.FC = () => {
                       </tbody>
                     </table>
 
-                    <h5 className="fw-bold text-secondary mb-2">⬆️ Salidas de Efectivo y Préstamos</h5>
+                    <h5 className="fw-bold text-secondary mb-2"><i className="bi bi-arrow-up-circle me-1" />Salidas de Efectivo y Préstamos</h5>
                     {salidasLista.length === 0 ? (
                       <p className="text-muted small ps-3 fst-italic">- No hubo Salidas de Efectivo -</p>
                     ) : (
@@ -611,7 +611,7 @@ export const ModuloCorteReportes: React.FC = () => {
                 className={`btn btn-lg px-5 fw-bold shadow-sm ${mostrarConteo ? 'btn-secondary' : 'btn-danger'}`}
                 onClick={() => setMostrarConteo(!mostrarConteo)}
               >
-                {mostrarConteo ? '▲ Ocultar Billetes y Monedas' : '💵 Contar Billetes y Monedas / Cerrar Turno'}
+                {mostrarConteo ? <><i className="bi bi-chevron-up me-1" />Ocultar Billetes y Monedas</> : <><i className="bi bi-cash-stack me-1" />Contar Billetes y Monedas / Cerrar Turno</>}
               </button>
             </div>
           )}
@@ -620,7 +620,7 @@ export const ModuloCorteReportes: React.FC = () => {
           {mostrarCierreDeCajero && mostrarConteo && (
             <div className="card shadow-sm mb-3 border-primary no-print">
               <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <span className="fw-bold">💵 Conteo de Billetes y Monedas (Costa Rica) y Cierre de Turno</span>
+                <span className="fw-bold"><i className="bi bi-cash-stack me-1" />Conteo de Billetes y Monedas (Costa Rica) y Cierre de Turno</span>
                 <div className="d-flex gap-2">
                   <button
                     type="button"
@@ -637,7 +637,7 @@ export const ModuloCorteReportes: React.FC = () => {
                     className="btn btn-sm btn-light text-dark fw-bold"
                     onClick={() => setMostrarConteo(false)}
                   >
-                    Cerrar Panel ✕
+                    Cerrar Panel <i className="bi bi-x-lg ms-1" />
                   </button>
                 </div>
               </div>
@@ -727,10 +727,10 @@ export const ModuloCorteReportes: React.FC = () => {
                           }`}
                         >
                           {diferenciaVista === 0
-                            ? '🟡 Caja Exacta (₡0 diferencia)'
+                            ? 'Caja Exacta (₡0 diferencia)'
                             : diferenciaVista > 0
-                            ? `🟢 Sobrante: +₡${diferenciaVista.toLocaleString()}`
-                            : `🔴 Faltante: ₡${diferenciaVista.toLocaleString()}`}
+                            ? `Sobrante: +₡${diferenciaVista.toLocaleString()}`
+                            : `Faltante: ₡${diferenciaVista.toLocaleString()}`}
                         </div>
                       )}
 
@@ -750,7 +750,7 @@ export const ModuloCorteReportes: React.FC = () => {
                       className="btn btn-danger btn-lg w-100 fw-bold"
                       disabled={efectivoContadoFinal === null || cerrando}
                     >
-                      {cerrando ? 'Cerrando y Respaldando...' : '🔒 Cerrar Turno y Respaldar BD'}
+                      {cerrando ? 'Cerrando y Respaldando...' : <><i className="bi bi-lock-fill me-1" />Cerrar Turno y Respaldar BD</>}
                     </button>
                   </div>
                 </div>
@@ -772,7 +772,7 @@ export const ModuloCorteReportes: React.FC = () => {
                   className={`btn fw-bold ${tipoPeriodo === 'un_dia' ? 'btn-primary' : 'btn-outline-primary'}`}
                   onClick={() => seleccionarModoPeriodo('un_dia')}
                 >
-                  📅 Un Día
+                  <i className="bi bi-calendar-day me-1" />Un Día
                 </button>
                 <button
                   className={`btn fw-bold ${tipoPeriodo === 'semana' ? 'btn-primary' : 'btn-outline-primary'}`}
@@ -790,7 +790,7 @@ export const ModuloCorteReportes: React.FC = () => {
                   className={`btn fw-bold ${tipoPeriodo === 'intervalo' ? 'btn-primary' : 'btn-outline-primary'}`}
                   onClick={() => setTipoPeriodo('intervalo')}
                 >
-                  🗓 Varios Días (Intervalo)
+                  <i className="bi bi-calendar-range me-1" />Varios Días (Intervalo)
                 </button>
               </div>
 
@@ -839,7 +839,7 @@ export const ModuloCorteReportes: React.FC = () => {
                     className="btn btn-sm btn-primary fw-bold px-3"
                     onClick={() => cargarReportePeriodo(desde, hasta)}
                   >
-                    🔍 Consultar
+                    <i className="bi bi-search me-1" />Consultar
                   </button>
                 </div>
               )}
@@ -894,7 +894,7 @@ export const ModuloCorteReportes: React.FC = () => {
               <div className="card shadow-sm mb-3">
                 <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                   <span className="fw-bold">
-                    📊 Gráfico de Ventas {reporte.desde === reporte.hasta ? `por Hora (${reporte.desde})` : `por Día (${reporte.desde} a ${reporte.hasta})`}
+                    <i className="bi bi-bar-chart-fill me-1" />Gráfico de Ventas {reporte.desde === reporte.hasta ? `por Hora (${reporte.desde})` : `por Día (${reporte.desde} a ${reporte.hasta})`}
                   </span>
                   {barraHover && (
                     <span className="badge bg-light text-dark fs-6">
@@ -979,7 +979,7 @@ export const ModuloCorteReportes: React.FC = () => {
               <div className="row g-3">
                 <div className="col-lg-5">
                   <div className="card shadow-sm h-100">
-                    <div className="card-header fw-bold bg-body-tertiary">💳 Ventas por Método de Pago</div>
+                    <div className="card-header fw-bold bg-body-tertiary"><i className="bi bi-credit-card me-1" />Ventas por Método de Pago</div>
                     <div className="card-body">
                       {[
                         { label: 'Efectivo', valor: reporte.desglose_pagos.efectivo, color: 'bg-success' },
@@ -1008,7 +1008,7 @@ export const ModuloCorteReportes: React.FC = () => {
 
                 <div className="col-lg-7">
                   <div className="card shadow-sm h-100">
-                    <div className="card-header fw-bold bg-body-tertiary">🏆 Top 10 Productos Más Vendidos</div>
+                    <div className="card-header fw-bold bg-body-tertiary"><i className="bi bi-trophy-fill me-1" />Top 10 Productos Más Vendidos</div>
                     <div className="table-responsive">
                       <table className="table table-sm table-hover align-middle mb-0">
                         <thead className="table-light">

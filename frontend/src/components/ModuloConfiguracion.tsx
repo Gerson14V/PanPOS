@@ -62,7 +62,7 @@ export const ModuloConfiguracion: React.FC = () => {
     try {
       await api.put('/configuracion', { configuraciones: formConfig });
       await recargarCatalogos();
-      setMensaje({ tipo: 'success', texto: '✅ Cambios guardados en la configuración de PanPOS.' });
+      setMensaje({ tipo: 'success', texto: 'Cambios guardados en la configuración de PanPOS.' });
     } catch {
       setMensaje({ tipo: 'danger', texto: 'No se pudieron guardar los cambios de configuración.' });
     } finally {
@@ -185,7 +185,7 @@ export const ModuloConfiguracion: React.FC = () => {
       className="btn btn-config-tile shadow-sm d-flex flex-column align-items-center justify-content-center p-3 text-center"
       style={{ width: '135px', height: '110px', transition: 'transform 0.12s' }}
     >
-      <span className={`fs-2 mb-1 ${color}`}>{icono}</span>
+      <i className={`bi ${icono} fs-2 mb-1 ${color}`} />
       <span className="small fw-semibold lh-sm">{titulo}</span>
     </button>
   );
@@ -203,7 +203,7 @@ export const ModuloConfiguracion: React.FC = () => {
           className="btn btn-sm btn-warning fw-bold text-dark"
           onClick={() => setSeccionActiva('menu')}
         >
-          🏠 Mostrar todas las opciones
+          <i className="bi bi-house-fill me-1" />Mostrar todas las opciones
         </button>
       </div>
 
@@ -222,11 +222,11 @@ export const ModuloConfiguracion: React.FC = () => {
             <div className="mb-4">
               <h6 className="fw-bold border-bottom pb-2 mb-3 text-secondary">General</h6>
               <div className="d-flex flex-wrap gap-3">
-                <IconCard id="opciones_habilitadas" icono="⚙️" titulo="Opciones habilitadas" />
-                <IconCard id="cajeros" icono="👥" titulo="Cajeros" color="text-info" />
-                <IconCard id="base_datos" icono="🗄️" titulo="Base de Datos" color="text-secondary" />
-                <IconCard id="facturacion" icono="🧾" titulo="Facturación Electrónica" color="text-success" />
-                <IconCard id="folios" icono="🔢" titulo="Modificar Folios" color="text-warning" />
+                <IconCard id="opciones_habilitadas" icono="bi-gear-fill" titulo="Opciones habilitadas" />
+                <IconCard id="cajeros" icono="bi-people-fill" titulo="Cajeros" color="text-info" />
+                <IconCard id="base_datos" icono="bi-database" titulo="Base de Datos" color="text-secondary" />
+                <IconCard id="facturacion" icono="bi-receipt" titulo="Facturación Electrónica" color="text-success" />
+                <IconCard id="folios" icono="bi-123" titulo="Modificar Folios" color="text-warning" />
               </div>
             </div>
 
@@ -234,13 +234,13 @@ export const ModuloConfiguracion: React.FC = () => {
             <div className="mb-4">
               <h6 className="fw-bold border-bottom pb-2 mb-3 text-secondary">Personalización</h6>
               <div className="d-flex flex-wrap gap-3">
-                <IconCard id="logotipo" icono="🏪" titulo="Datos y Logotipo del Negocio" />
-                <IconCard id="ticket" icono="📃" titulo="Ticket" color="text-secondary" />
-                <IconCard id="formas_pago" icono="💳" titulo="Formas de Pago" color="text-success" />
-                <IconCard id="impuestos" icono="🏛️" titulo="Impuestos (IVA)" color="text-warning" />
-                <IconCard id="corte" icono="✂️" titulo="Corte de Caja" color="text-danger" />
-                <IconCard id="moneda" icono="₡" titulo="Símbolo de Moneda" color="text-success" />
-                <IconCard id="unidades" icono="⚖️" titulo="Unidades de Medida" color="text-info" />
+                <IconCard id="logotipo" icono="bi-shop" titulo="Datos y Logotipo del Negocio" />
+                <IconCard id="ticket" icono="bi-file-text" titulo="Ticket" color="text-secondary" />
+                <IconCard id="formas_pago" icono="bi-credit-card" titulo="Formas de Pago" color="text-success" />
+                <IconCard id="impuestos" icono="bi-bank" titulo="Impuestos (IVA)" color="text-warning" />
+                <IconCard id="corte" icono="bi-scissors" titulo="Corte de Caja" color="text-danger" />
+                <IconCard id="moneda" icono="bi-coin" titulo="Símbolo de Moneda" color="text-success" />
+                <IconCard id="unidades" icono="bi-rulers" titulo="Unidades de Medida" color="text-info" />
               </div>
             </div>
 
@@ -248,9 +248,9 @@ export const ModuloConfiguracion: React.FC = () => {
             <div className="mb-4">
               <h6 className="fw-bold border-bottom pb-2 mb-3 text-secondary">Dispositivos y Servicios</h6>
               <div className="d-flex flex-wrap gap-3">
-                <IconCard id="impresora" icono="🖨️" titulo="Impresora de Tickets" />
-                <IconCard id="lector" icono="🔫" titulo="Lector de Códigos" color="text-danger" />
-                <IconCard id="cajon" icono="💵" titulo="Cajón de Dinero" color="text-success" />
+                <IconCard id="impresora" icono="bi-printer" titulo="Impresora de Tickets" />
+                <IconCard id="lector" icono="bi-upc-scan" titulo="Lector de Códigos" color="text-danger" />
+                <IconCard id="cajon" icono="bi-cash-stack" titulo="Cajón de Dinero" color="text-success" />
               </div>
             </div>
 
@@ -258,7 +258,7 @@ export const ModuloConfiguracion: React.FC = () => {
             <div>
               <h6 className="fw-bold border-bottom pb-2 mb-3 text-secondary">Mantenimiento</h6>
               <div className="d-flex flex-wrap gap-3">
-                <IconCard id="respaldo" icono="💾" titulo="Respaldo Automático" color="text-primary" />
+                <IconCard id="respaldo" icono="bi-floppy" titulo="Respaldo Automático" color="text-primary" />
               </div>
             </div>
           </div>
@@ -269,11 +269,11 @@ export const ModuloConfiguracion: React.FC = () => {
           <div className="mx-auto" style={{ maxWidth: '850px', width: '100%' }}>
             <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
               <button className="btn btn-outline-secondary btn-sm fw-bold" onClick={() => setSeccionActiva('menu')}>
-                ← Volver al Menú de Configuración
+                <i className="bi bi-arrow-left me-1" />Volver al Menú de Configuración
               </button>
               {seccionActiva !== 'cajeros' && (
                 <button className="btn btn-success fw-bold" disabled={guardandoConfig} onClick={() => guardarConfiguracion()}>
-                  {guardandoConfig ? 'Guardando...' : '💾 Guardar Cambios de esta Sección'}
+                  {guardandoConfig ? 'Guardando...' : <><i className="bi bi-floppy me-1" />Guardar Cambios de esta Sección</>}
                 </button>
               )}
             </div>
@@ -281,7 +281,7 @@ export const ModuloConfiguracion: React.FC = () => {
             {/* 1. Opciones Habilitadas */}
             {seccionActiva === 'opciones_habilitadas' && (
               <div>
-                <h5 className="fw-bold mb-3">⚙️ Opciones y Módulos Habilitados</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-gear-fill me-1" />Opciones y Módulos Habilitados</h5>
                 <div className="form-check form-switch mb-3">
                   <input
                     className="form-check-input"
@@ -322,7 +322,7 @@ export const ModuloConfiguracion: React.FC = () => {
             {/* 2. Cajeros */}
             {seccionActiva === 'cajeros' && (
               <div>
-                <h5 className="fw-bold mb-3">👥 Administración de Cajeros y Permisos</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-people-fill me-1" />Administración de Cajeros y Permisos</h5>
                 <div className="table-responsive mb-4">
                   <table className="table table-bordered align-middle">
                     <thead className="table-dark">
@@ -368,7 +368,7 @@ export const ModuloConfiguracion: React.FC = () => {
                 </div>
 
                 <form className="p-3 border rounded bg-body-tertiary" onSubmit={crearUsuario}>
-                  <h6 className="fw-bold mb-3">➕ Registrar Nuevo Cajero</h6>
+                  <h6 className="fw-bold mb-3"><i className="bi bi-plus-circle me-1" />Registrar Nuevo Cajero</h6>
                   <div className="row g-2">
                     <div className="col-md-3">
                       <input className="form-control" placeholder="Nombre completo" value={nombre} onChange={(e) => setNombre(e.target.value)} required />
@@ -396,12 +396,12 @@ export const ModuloConfiguracion: React.FC = () => {
             {/* 3. Base de Datos */}
             {seccionActiva === 'base_datos' && (
               <div>
-                <h5 className="fw-bold mb-3">🗄️ Estado y Mantenimiento de Base de Datos SQLite</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-database me-1" />Estado y Mantenimiento de Base de Datos SQLite</h5>
                 <div className="alert alert-success">
                   <strong>Motor SQLite Blindado Activo:</strong> Operando con <code>PRAGMA journal_mode = WAL</code> y <code>synchronous = FULL</code> (Resistente a cortes de energía eléctrica).
                 </div>
                 <button type="button" className="btn btn-primary fw-bold" onClick={dispararBackupManual}>
-                  💾 Compactar (VACUUM) y Generar Copia de Seguridad Ahora
+                  <i className="bi bi-floppy me-1" />Compactar (VACUUM) y Generar Copia de Seguridad Ahora
                 </button>
               </div>
             )}
@@ -409,9 +409,9 @@ export const ModuloConfiguracion: React.FC = () => {
             {/* 4. Facturación Electrónica (Hacienda Costa Rica v4.3 / v4.4) */}
             {seccionActiva === 'facturacion' && (
               <div>
-                <h5 className="fw-bold mb-2">🧾 Facturación Electrónica — Ministerio de Hacienda (Costa Rica) <span className="badge bg-warning text-dark ms-1">Próximamente</span></h5>
+                <h5 className="fw-bold mb-2"><i className="bi bi-receipt me-1" />Facturación Electrónica — Ministerio de Hacienda (Costa Rica) <span className="badge bg-warning text-dark ms-1">Próximamente</span></h5>
                 <div className="alert alert-warning py-2 small fw-semibold">
-                  ⏳ Módulo en preparación: actualmente guarda la configuración preliminar, pero todavía no emite ni envía comprobantes a Hacienda.
+                  <i className="bi bi-hourglass-split me-1" />Módulo en preparación: actualmente guarda la configuración preliminar, pero todavía no emite ni envía comprobantes a Hacienda.
                 </div>
                 <p className="text-muted small mb-3">
                   Configure la emisión de Tiquete Electrónico y Factura Electrónica con cola offline automática si falla el internet.
@@ -483,7 +483,7 @@ export const ModuloConfiguracion: React.FC = () => {
             {/* 5. Folios, Logotipo, Ticket, Formas de Pago, Impuestos, Corte, Moneda, Unidades */}
             {seccionActiva === 'folios' && (
               <div>
-                <h5 className="fw-bold mb-3">🔢 Numeración de Folios y Consecutivos</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-123 me-1" />Numeración de Folios y Consecutivos</h5>
                 <div className="row g-3">
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Sucursal (3 dígitos)</label>
@@ -499,7 +499,7 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'logotipo' && (
               <div>
-                <h5 className="fw-bold mb-3">🏪 Datos Comerciales de la Panadería</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-shop me-1" />Datos Comerciales de la Panadería</h5>
                 <div className="row g-3">
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Nombre del Negocio</label>
@@ -523,7 +523,7 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'ticket' && (
               <div>
-                <h5 className="fw-bold mb-3">📃 Diseño de Encabezado y Pie de Ticket</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-file-text me-1" />Diseño de Encabezado y Pie de Ticket</h5>
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Lema / Encabezado del Ticket</label>
                   <input className="form-control" value={formConfig['encabezado_ticket'] || 'Pan Fresco Recién Horneado'} onChange={(e) => setFormConfig({ ...formConfig, encabezado_ticket: e.target.value })} />
@@ -537,7 +537,7 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'formas_pago' && (
               <div>
-                <h5 className="fw-bold mb-3">💳 Formas de Pago y Límites de Crédito</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-credit-card me-1" />Formas de Pago y Límites de Crédito</h5>
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Teléfono SINPE Móvil del Negocio (Para mostrar en pantalla al cobrar)</label>
                   <input className="form-control" placeholder="Ej: 8888-8888 a nombre de..." value={formConfig['sinpe_telefono_receptor'] || ''} onChange={(e) => setFormConfig({ ...formConfig, sinpe_telefono_receptor: e.target.value })} />
@@ -551,7 +551,7 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'impuestos' && (
               <div>
-                <h5 className="fw-bold mb-3">🏛️ Configuración de Impuestos (IVA Costa Rica)</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-bank me-1" />Configuración de Impuestos (IVA Costa Rica)</h5>
                 <div className="row g-3">
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Tarifa General IVA (%)</label>
@@ -567,7 +567,7 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'corte' && (
               <div>
-                <h5 className="fw-bold mb-3">✂️ Parámetros de Apertura y Corte de Caja</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-scissors me-1" />Parámetros de Apertura y Corte de Caja</h5>
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Fondo Inicial de Caja por Defecto (₡)</label>
                   <input type="number" className="form-control" value={formConfig['fondo_inicial_sugerido'] || '10000'} onChange={(e) => setFormConfig({ ...formConfig, fondo_inicial_sugerido: e.target.value })} />
@@ -587,16 +587,16 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'unidades' && (
               <div>
-                <h5 className="fw-bold mb-3">⚖️ Unidades de Medida</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-rulers me-1" />Unidades de Medida</h5>
                 <p className="text-muted">PanPOS opera optimizado por <strong>Unidad (Unid)</strong> y <strong>Paquete / Bolsa</strong> para máxima velocidad en mostrador.</p>
               </div>
             )}
 
             {seccionActiva === 'impresora' && (
               <div>
-                <h5 className="fw-bold mb-3">🖨️ Impresora Térmica de Tickets (ESC/POS) <span className="badge bg-warning text-dark ms-1">Próximamente</span></h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-printer me-1" />Impresora Térmica de Tickets (ESC/POS) <span className="badge bg-warning text-dark ms-1">Próximamente</span></h5>
                 <div className="alert alert-warning py-2 small fw-semibold">
-                  ⏳ Módulo en preparación: guarda las preferencias de impresora, pero la impresión directa ESC/POS aún no está conectada.
+                  <i className="bi bi-hourglass-split me-1" />Módulo en preparación: guarda las preferencias de impresora, pero la impresión directa ESC/POS aún no está conectada.
                 </div>
                 <div className="form-check form-switch mb-3">
                   <input
@@ -625,14 +625,14 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'lector' && (
               <div>
-                <h5 className="fw-bold mb-3">🔫 Lector de Códigos de Barras</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-upc-scan me-1" />Lector de Códigos de Barras</h5>
                 <p className="text-muted">El campo de código enfoca automáticamente al abrir F1 Ventas y después de cada cobro. Compatible con cualquier lector láser/2D USB HID y códigos cortos manuales <code>01</code> a <code>99</code>.</p>
               </div>
             )}
 
             {seccionActiva === 'cajon' && (
               <div>
-                <h5 className="fw-bold mb-3">💵 Cajón de Dinero (RJ11 conectado a Impresora)</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-cash-stack me-1" />Cajón de Dinero (RJ11 conectado a Impresora)</h5>
                 <div className="form-check form-switch mb-3">
                   <input
                     className="form-check-input"
@@ -647,7 +647,7 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'respaldo' && (
               <div>
-                <h5 className="fw-bold mb-3">💾 Rutas de Respaldo Automático (Local + Llave Maya USB)</h5>
+                <h5 className="fw-bold mb-3"><i className="bi bi-floppy me-1" />Rutas de Respaldo Automático (Local + Llave Maya USB)</h5>
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Carpeta Local de Respaldos en la PC</label>
                   <input className="form-control" value={formConfig['ruta_respaldo_local'] || ''} onChange={(e) => setFormConfig({ ...formConfig, ruta_respaldo_local: e.target.value })} />
@@ -657,7 +657,7 @@ export const ModuloConfiguracion: React.FC = () => {
                   <input className="form-control" placeholder="Ej: E:\Respaldos_PanPOS o /media/gerson/USB" value={formConfig['ruta_respaldo_usb'] || ''} onChange={(e) => setFormConfig({ ...formConfig, ruta_respaldo_usb: e.target.value })} />
                 </div>
                 <button type="button" className="btn btn-warning fw-bold" onClick={dispararBackupManual}>
-                  💾 Ejecutar Respaldo Inmediato Ahora
+                  <i className="bi bi-floppy me-1" />Ejecutar Respaldo Inmediato Ahora
                 </button>
               </div>
             )}
@@ -671,7 +671,7 @@ export const ModuloConfiguracion: React.FC = () => {
           <div className="modal-dialog modal-dialog-centered">
             <form className="modal-content" onSubmit={guardarEdicionUsuario}>
               <div className="modal-header bg-primary text-white">
-                <h5 className="modal-title fw-bold">✏️ Editar Usuario — {editandoUsuario.nombre}</h5>
+                <h5 className="modal-title fw-bold"><i className="bi bi-pencil-square me-1" />Editar Usuario — {editandoUsuario.nombre}</h5>
                 <button type="button" className="btn-close btn-close-white" onClick={() => setEditandoUsuario(null)} />
               </div>
               <div className="modal-body">

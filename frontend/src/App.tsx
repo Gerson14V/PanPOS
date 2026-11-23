@@ -110,13 +110,17 @@ const MainLayout: React.FC = () => {
     <div className="min-vh-100 bg-body">
       <LoginTurnoModal />
 
-      <nav className="navbar navbar-expand-lg bg-primary navbar-dark shadow-sm px-3 py-2">
-        <div className="container-fluid px-0">
-          <span className="navbar-brand fw-bold fs-4 me-4">
-            🥖 {configuracion['nombre_negocio'] || 'PanPOS'}
+      <nav className="navbar navbar-expand-lg bg-primary navbar-dark shadow-sm px-3 py-2 panpos-navbar">
+        <div className="container-fluid px-0 flex-nowrap">
+          <span
+            className="navbar-brand fw-bold fs-4 me-4 panpos-brand"
+            title={configuracion['nombre_negocio'] || 'PanPOS'}
+          >
+            <i className="bi bi-basket2-fill me-1" />
+            <span className="panpos-brand-texto">{configuracion['nombre_negocio'] || 'PanPOS'}</span>
           </span>
 
-          <div className="d-flex flex-wrap gap-2 me-auto">
+          <div className="d-flex flex-nowrap gap-2 me-auto panpos-nav-modulos">
             <button
               className={`btn fw-bold ${moduloActivo === 'ventas' ? 'btn-light text-primary' : 'btn-outline-light'}`}
               onClick={() => setModuloActivo('ventas')}
@@ -129,7 +133,7 @@ const MainLayout: React.FC = () => {
                 className={`btn fw-bold ${moduloActivo === 'clientes' ? 'btn-light text-primary' : 'btn-outline-light'}`}
                 onClick={() => setModuloActivo('clientes')}
               >
-                F2 Clientes / Fiados
+                F2 Clientes<span className="panpos-nav-extra"> / Fiados</span>
               </button>
             )}
 
@@ -137,7 +141,7 @@ const MainLayout: React.FC = () => {
               className={`btn fw-bold ${moduloActivo === 'productos_inventario' ? 'btn-light text-primary' : 'btn-outline-light'}`}
               onClick={() => setModuloActivo('productos_inventario')}
             >
-              F3 Productos/Inventario
+              F3 Productos<span className="panpos-nav-extra">/Inventario</span>
             </button>
 
             <button
@@ -151,25 +155,32 @@ const MainLayout: React.FC = () => {
               className={`btn fw-bold ${moduloActivo === 'corte' ? 'btn-light text-primary' : 'btn-outline-light'}`}
               onClick={() => setModuloActivo('corte')}
             >
-              Corte y Reportes
+              Corte<span className="panpos-nav-extra"> y Reportes</span>
             </button>
 
             {usuario?.rol === 'admin' && (
               <button
                 className={`btn fw-bold ${moduloActivo === 'config' ? 'btn-light text-primary' : 'btn-outline-light'}`}
                 onClick={() => setModuloActivo('config')}
+                title="Configuración"
               >
-                ⚙️ Configuración
+                <i className="bi bi-gear-fill" />
+                <span className="panpos-nav-extra ms-1">Configuración</span>
               </button>
             )}
           </div>
 
-          <div className="d-flex align-items-center gap-2 text-white pb-1">
+          <div className="d-flex align-items-center flex-shrink-0 gap-2 text-white pb-1 ms-2">
             
             {usuario && (
               <>
-                <span className="badge bg-light text-dark fs-6 px-3 py-2">
-                  👤 {usuario.nombre} ({usuario.rol.toUpperCase()})
+                <span
+                  className="badge bg-light text-dark fs-6 px-3 py-2 panpos-usuario"
+                  title={`${usuario.nombre} (${usuario.rol.toUpperCase()})`}
+                >
+                  <i className="bi bi-person-fill me-1" />
+                  {usuario.nombre}
+                  <span className="panpos-nav-extra"> ({usuario.rol.toUpperCase()})</span>
                 </span>
                 <button
                   className="btn btn-sm btn-danger fw-bold px-3 py-1"

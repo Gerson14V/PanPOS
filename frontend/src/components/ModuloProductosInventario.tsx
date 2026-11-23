@@ -193,14 +193,14 @@ export const ModuloProductosInventario: React.FC = () => {
         <div className="d-flex flex-wrap gap-2">
           {kardexHabilitado && usuario?.rol === 'admin' && (
             <button className="btn btn-outline-secondary fw-semibold" onClick={abrirModalKardex}>
-              🔍 Auditoría de Stock
+              <i className="bi bi-search me-1" />Auditoría de Stock
             </button>
           )}
           <button
             className={`btn fw-semibold ${soloSinStock ? 'btn-warning' : 'btn-outline-warning'}`}
             onClick={() => setSoloSinStock(!soloSinStock)}
           >
-            ⚠️ {soloSinStock ? 'Viendo Solo Agotados (0)' : 'Filtrar Agotados'}
+            <i className="bi bi-exclamation-triangle-fill me-1" />{soloSinStock ? 'Viendo Solo Agotados (0)' : 'Filtrar Agotados'}
           </button>
           <select
             className="form-select"
@@ -228,7 +228,7 @@ export const ModuloProductosInventario: React.FC = () => {
         <div className="col-lg-4">
           <div className="card shadow-sm border-0">
             <div className="card-header bg-primary text-white fw-bold">
-              {editandoId ? '✏️ Modificar Producto' : '➕ Registrar Nuevo Producto'}
+              {editandoId ? <><i className="bi bi-pencil-square me-1" />Modificar Producto</> : <><i className="bi bi-plus-circle me-1" />Registrar Nuevo Producto</>}
             </div>
             <form className="card-body" onSubmit={guardarProducto}>
               <div className="mb-2">
@@ -242,7 +242,7 @@ export const ModuloProductosInventario: React.FC = () => {
                     required
                   />
                   <button type="button" className="btn btn-warning fw-semibold" onClick={pedirCodigoCorto}>
-                    ⚡ Sugerir 01-99
+                    <i className="bi bi-lightning-fill me-1" />Sugerir 01-99
                   </button>
                 </div>
               </div>
