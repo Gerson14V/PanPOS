@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
-import { api, setAuthToken } from '../api/client';
+import { api, setAuthToken, mensajeError } from '../api/client';
+import { BotonAccion } from './BotonAccion';
 
 export const LoginTurnoModal: React.FC = () => {
   const { usuario, setUsuario, turno, setTurno, configuracion, carrito, recargarCatalogos } = usePos();
@@ -29,12 +30,8 @@ export const LoginTurnoModal: React.FC = () => {
       await recargarCatalogos();
       setUsuario(res.data.usuario);
       setPassword('');
-    } catch (err: any) {
-      setError(
-        err.response?.data?.errors?.credenciales?.[0] ||
-          err.response?.data?.message ||
-          'Credenciales de acceso incorrectas.'
-      );
+    } catch (err) {
+      setError(mensajeError(err, 'Credenciales de acceso incorrectas.'));
     } finally {
       setCargando(false);
     }
@@ -47,12 +44,11 @@ export const LoginTurnoModal: React.FC = () => {
     setCargando(true);
     try {
       const res = await api.post('/turnos/abrir', {
-        usuario_id: usuario.id,
         monto_inicial: Number(montoInicial),
       });
       setTurno(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Error al abrir el turno de caja.');
+    } catch (err) {
+      setError(mensajeError(err, 'Error al abrir el turno de caja.'));
     } finally {
       setCargando(false);
     }
@@ -161,17 +157,14 @@ export const LoginTurnoModal: React.FC = () => {
                     />
                   </div>
 
-                  <button
+                  <BotonAccion
                     type="submit"
                     className="btn btn-primary btn-lg w-100 fw-bold py-2"
-                    disabled={cargando}
+                    cargando={cargando}
+                    textoCargando="Verificando..."
                   >
-                    {cargando
-                      ? 'Verificando...'
-                      : turno
-                      ? 'Ingresar y Continuar Turno en Curso'
-                      : 'Ingresar al Sistema'}
-                  </button>
+                    {turno ? 'Ingresar y Continuar Turno en Curso' : 'Ingresar al Sistema'}
+                  </BotonAccion>
                 </form>
               ) : (
                 <form onSubmit={handleAbrirTurno}>
@@ -207,13 +200,14 @@ export const LoginTurnoModal: React.FC = () => {
                     >
                       Volver
                     </button>
-                    <button
+                    <BotonAccion
                       type="submit"
                       className="btn btn-success btn-lg flex-grow-1 fw-bold"
-                      disabled={cargando}
+                      cargando={cargando}
+                      textoCargando="Abriendo caja..."
                     >
-                      {cargando ? 'Abriendo Caja...' : 'Confirmar y Abrir Turno'}
-                    </button>
+                      Confirmar y Abrir Turno
+                    </BotonAccion>
                   </div>
                 </form>
               )}

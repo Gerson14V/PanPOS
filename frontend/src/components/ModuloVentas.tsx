@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { usePos } from '../context/PosContext';
-import { api } from '../api/client';
-import { PagoItem } from '../types/models';
+import { api, generarClaveIdempotencia, mensajeError, postConReintento } from '../api/client';
+import { PagoItem, Producto, RespuestaVenta } from '../types/models';
+import { BotonAccion } from './BotonAccion';
+import { Aviso, AvisoFlotante } from './AvisoFlotante';
+import { sonidos, sonidosActivos } from '../utils/sonidos';
+import { imprimirTicket } from '../utils/ticket';
 
 export const ModuloVentas: React.FC = () => {
   const {
@@ -17,11 +21,13 @@ export const ModuloVentas: React.FC = () => {
     eliminarDelCarrito,
     reemplazarCarrito,
     limpiarCarrito,
-    recargarCatalogos,
+    aplicarStockActualizado,
   } = usePos();
 
   const [busqueda, setBusqueda] = useState('');
-  const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'danger' | 'warning'; texto: string } | null>(null);
+  const [mensaje, setMensaje] = useState<Aviso | null>(null);
+  const cerrarMensaje = useCallback(() => setMensaje(null), []);
+  const [indiceSugerencia, setIndiceSugerencia] = useState(-1);
   const inputScanRef = useRef<HTMLInputElement>(null);
 
   const [modalCobro, setModalCobro] = useState(false);
@@ -33,7 +39,10 @@ export const ModuloVentas: React.FC = () => {
   const [procesandoVenta, setProcesandoVenta] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
   const [procesandoMovCaja, setProcesandoMovCaja] = useState(false);
+  const [claveMovCaja, setClaveMovCaja] = useState('');
+  const [efectivoDisponible, setEfectivoDisponible] = useState<number | null>(null);
   const [anulandoId, setAnulandoId] = useState<number | null>(null);
+  const [cargandoLista, setCargandoLista] = useState<'ventas_dia' | 'espera' | null>(null);
 
   // Modal Ventas del Día
   const [modalVentasDia, setModalVentasDia] = useState(false);
@@ -46,6 +55,9 @@ export const ModuloVentas: React.FC = () => {
   const [montoTarjetaMixto, setMontoTarjetaMixto] = useState('0');
   const [montoSinpeMixto, setMontoSinpeMixto] = useState('0');
   const [montoCreditoMixto, setMontoCreditoMixto] = useState('0');
+  const impresionAutomatica = (configuracion['impresion_escpos_activa'] ?? '0') === '1';
+  const [imprimirAlCobrar, setImprimirAlCobrar] = useState(impresionAutomatica);
+  const [filtroVentasDia, setFiltroVentasDia] = useState<'todas' | 'completada' | 'anulada' | 'en_espera'>('todas');
 
   const [comunDesc, setComunDesc] = useState('Pan / Repostería');
   const [comunPrecio, setComunPrecio] = useState('');
@@ -67,11 +79,37 @@ export const ModuloVentas: React.FC = () => {
   const mixtoCuadra = metodoPrincipal !== 'mixto' || (mixtoSinNegativos && Math.abs(sumaMixto - totalVenta) < 0.01);
   const efectivoSuficiente = metodoPrincipal !== 'efectivo' || (Number(pagaCon) || 0) >= totalVenta;
   const cobroValido = !faltaClienteCredito && mixtoCuadra && efectivoSuficiente;
+
+  // Límite de crédito sugerido (Configuración > Formas de Pago): solo advierte, no bloquea
+  const limiteCredito = Number(configuracion['limite_credito_default'] || 0);
+  const montoACredito = metodoPrincipal === 'credito' ? totalVenta : metodoPrincipal === 'mixto' ? crMixtoVal : 0;
+  const clienteCredito = clientes.find((c) => String(c.id) === clienteId);
+  const deudaResultante = clienteCredito ? Number(clienteCredito.saldo_deudor) + montoACredito : 0;
+  const excedeLimiteCredito = limiteCredito > 0 && montoACredito > 0 && !!clienteCredito && deudaResultante > limiteCredito;
   const mostrarRapidos = (configuracion['panel_botones_rapidos'] ?? '1') === '1';
   const botonesRapidos = productos.filter((p) => p.mostrar_boton_rapido);
 
   const hayModalAbierto =
     modalCobro || modalComun || modalCajaMov !== null || modalEspera || modalVentasDia || !usuario || !turno;
+
+  const conSonido = sonidosActivos(configuracion);
+
+  /** Agrega un producto con sonido de confirmación (o de error si no hay existencias). */
+  const agregarProducto = useCallback(
+    (prod: Producto, cantidad = 1): boolean => {
+      const err = agregarAlCarrito(prod, cantidad);
+      if (err) {
+        if (conSonido) sonidos.error();
+        setMensaje({ tipo: 'danger', texto: err });
+        return false;
+      }
+      if (conSonido) sonidos.agregado();
+      // Un acierto limpia avisos de error anteriores, pero no el de "venta registrada / vuelto"
+      setMensaje((prev) => (prev && prev.tipo !== 'success' ? null : prev));
+      return true;
+    },
+    [agregarAlCarrito, conSonido]
+  );
 
   const procesarTerminoBusqueda = useCallback(
     (textoCrudo: string) => {
@@ -94,29 +132,55 @@ export const ModuloVentas: React.FC = () => {
       );
 
       if (exacto) {
-        const err = agregarAlCarrito(exacto, cantidadMultiplicador);
+        agregarProducto(exacto, cantidadMultiplicador);
         setBusqueda('');
-        setMensaje(err ? { tipo: 'danger', texto: err } : null);
         return;
       }
 
       const porNombre = productos.filter((p) => p.nombre.toLowerCase().includes(termino.toLowerCase()));
       if (porNombre.length === 1) {
-        const err = agregarAlCarrito(porNombre[0], cantidadMultiplicador);
+        agregarProducto(porNombre[0], cantidadMultiplicador);
         setBusqueda('');
-        setMensaje(err ? { tipo: 'danger', texto: err } : null);
       } else if (porNombre.length === 0) {
+        if (conSonido) sonidos.error();
         setMensaje({ tipo: 'warning', texto: `No se encontró producto con código o nombre "${termino}"` });
         setBusqueda('');
+      } else {
+        setMensaje({
+          tipo: 'info',
+          texto: `${porNombre.length} productos coinciden con "${termino}". Elija con las flechas ↑ ↓ y presione Enter.`,
+        });
       }
     },
-    [productos, agregarAlCarrito]
+    [productos, agregarProducto, conSonido]
   );
 
   const handleScanSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    procesarTerminoBusqueda(busqueda);
+    const seleccionada = indiceSugerencia >= 0 ? sugerenciasBusqueda[indiceSugerencia] : undefined;
+    if (seleccionada) {
+      agregarProducto(seleccionada, 1);
+      setBusqueda('');
+    } else {
+      procesarTerminoBusqueda(busqueda);
+    }
+    setIndiceSugerencia(-1);
     inputScanRef.current?.focus();
+  };
+
+  // Navegación con flechas dentro de las sugerencias de búsqueda
+  const navegarSugerencias = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (sugerenciasBusqueda.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setIndiceSugerencia((i) => (i + 1) % sugerenciasBusqueda.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setIndiceSugerencia((i) => (i <= 0 ? sugerenciasBusqueda.length - 1 : i - 1));
+    } else if (e.key === 'Escape') {
+      setBusqueda('');
+      setIndiceSugerencia(-1);
+    }
   };
 
   useEffect(() => {
@@ -134,6 +198,7 @@ export const ModuloVentas: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (procesandoVenta || procesandoMovCaja) return;
         if (modalCobro) { setModalCobro(false); return; }
         if (modalComun) { setModalComun(false); return; }
         if (modalCajaMov) { setModalCajaMov(null); return; }
@@ -152,14 +217,12 @@ export const ModuloVentas: React.FC = () => {
       }
       if (e.key === 'F7' && !hayModalAbierto) {
         e.preventDefault();
-        setErrorMovCaja(null);
-        setModalCajaMov('entrada');
+        abrirMovimientoCaja('entrada');
         return;
       }
       if (e.key === 'F8' && !hayModalAbierto) {
         e.preventDefault();
-        setErrorMovCaja(null);
-        setModalCajaMov('salida');
+        abrirMovimientoCaja('salida');
         return;
       }
 
@@ -202,7 +265,7 @@ export const ModuloVentas: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [carrito, hayModalAbierto, busqueda, procesarTerminoBusqueda, modalCobro, modalComun, modalCajaMov, modalEspera, modalVentasDia]);
+  }, [carrito, hayModalAbierto, busqueda, procesarTerminoBusqueda, modalCobro, modalComun, modalCajaMov, modalEspera, modalVentasDia, procesandoVenta, procesandoMovCaja]);
 
   const mantenerFocoEnLector = (e: React.MouseEvent) => {
     if (hayModalAbierto) return;
@@ -213,30 +276,53 @@ export const ModuloVentas: React.FC = () => {
     }
   };
 
-  const generarClaveIdempotencia = () =>
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `sale-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
   const abrirModalCobro = () => {
-    setIdempotencyKey(generarClaveIdempotencia());
+    setIdempotencyKey(generarClaveIdempotencia('venta'));
     setMetodoPrincipal('efectivo');
     setPagaCon(String(totalVenta));
     setMontoEfectivoMixto(String(totalVenta));
     setMontoTarjetaMixto('0');
     setMontoSinpeMixto('0');
     setMontoCreditoMixto('0');
+    setImprimirAlCobrar(impresionAutomatica);
     setModalCobro(true);
   };
 
+  const ventasDiaFiltradas = filtroVentasDia === 'todas' ? ventasDia : ventasDia.filter((v) => v.estado === filtroVentasDia);
+  const totalesPorMetodo = ventasDia
+    .filter((v) => v.estado === 'completada')
+    .flatMap((v) => v.pagos || [])
+    .reduce<Record<string, number>>((acc, p) => {
+      acc[p.metodo_pago] = (acc[p.metodo_pago] || 0) + Number(p.monto);
+      return acc;
+    }, {});
+
   const abrirVentasDelDia = async () => {
-    if (!turno) return;
+    if (!turno || cargandoLista) return;
+    setCargandoLista('ventas_dia');
     try {
       const res = await api.get(`/ventas?turno_id=${turno.id}`);
       setVentasDia(res.data);
+      setFiltroVentasDia('todas');
       setModalVentasDia(true);
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'No se pudieron cargar las ventas del día. Verifique la conexión con el servidor.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudieron cargar las ventas del día.') });
+    } finally {
+      setCargandoLista(null);
+    }
+  };
+
+  const abrirMovimientoCaja = (tipo: 'entrada' | 'salida') => {
+    setErrorMovCaja(null);
+    setClaveMovCaja(generarClaveIdempotencia(tipo));
+    setEfectivoDisponible(null);
+    setModalCajaMov(tipo);
+    // Consulta liviana: muestra cuánto efectivo hay antes de registrar una salida
+    if (tipo === 'salida' && turno) {
+      api
+        .get(`/turnos/${turno.id}/efectivo`)
+        .then((res) => setEfectivoDisponible(Number(res.data.efectivo_disponible)))
+        .catch(() => setEfectivoDisponible(null));
     }
   };
 
@@ -250,15 +336,21 @@ export const ModuloVentas: React.FC = () => {
 
     setAnulandoId(ventaId);
     try {
-      await api.post(`/ventas/${ventaId}/anular`, {
-        usuario_id: usuario.id,
+      const res = await api.post<RespuestaVenta>(`/ventas/${ventaId}/anular`, {
         motivo_anulacion: motivo.trim(),
       });
-      await recargarCatalogos();
-      await abrirVentasDelDia();
+      aplicarStockActualizado(res.data.productos_actualizados);
+      // Actualizar la fila en la lista abierta sin volver a descargarla
+      setVentasDia((prev) =>
+        prev.map((v) =>
+          v.id === ventaId
+            ? { ...v, estado: 'anulada', motivo_anulacion: res.data.motivo_anulacion ?? motivo.trim() }
+            : v
+        )
+      );
       setMensaje({ tipo: 'warning', texto: `Ticket #${numeroTicket} eliminado/anulado y existencias restauradas.` });
-    } catch (err: any) {
-      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'No se pudo anular el ticket.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudo anular el ticket.') });
     } finally {
       setAnulandoId(null);
     }
@@ -292,14 +384,19 @@ export const ModuloVentas: React.FC = () => {
       }
     }
 
+    const vuelto = estado === 'completada' ? pagos.reduce((acc, p) => acc + Number(p.vuelto_entregado || 0), 0) : 0;
+
     setProcesandoVenta(true);
     try {
-      await api.post('/ventas', {
-        idempotency_key: estado === 'completada' ? (idempotencyKey || generarClaveIdempotencia()) : null,
+      // Con clave de idempotencia el cobro se reintenta solo si el servidor no respondió,
+      // sin riesgo de registrar la venta dos veces.
+      const res = await postConReintento<RespuestaVenta>('/ventas', {
+        idempotency_key: estado === 'completada' ? (idempotencyKey || generarClaveIdempotencia('venta')) : generarClaveIdempotencia('espera'),
         venta_en_espera_id: ventaEnEsperaId,
         turno_id: turno.id,
-        usuario_id: usuario.id,
-        cliente_id: clienteId ? Number(clienteId) : null,
+        // El cliente solo se asocia si hay crédito (o al guardar en espera); así una venta
+        // en efectivo no queda a nombre del cliente elegido antes en la pestaña Crédito.
+        cliente_id: clienteId && (estado === 'en_espera' || montoACredito > 0) ? Number(clienteId) : null,
         estado,
         items: carrito.map((i) => ({
           producto_id: i.producto_id,
@@ -311,34 +408,56 @@ export const ModuloVentas: React.FC = () => {
       });
 
       limpiarCarrito();
+      aplicarStockActualizado(res.data.productos_actualizados);
       setIdempotencyKey('');
       setVentaEnEsperaId(null);
       setClienteId('');
       setModalCobro(false);
-      await recargarCatalogos();
+
+      const ventaRegistrada = res.data;
+      const imprimirAhora = estado === 'completada' && imprimirAlCobrar;
+      if (estado === 'completada' && conSonido) sonidos.cobrado();
+      if (imprimirAhora) imprimirTicket(ventaRegistrada, configuracion);
+
       setMensaje({
         tipo: 'success',
-        texto: estado === 'completada' ? 'Venta registrada correctamente.' : 'Ticket guardado en espera (F6).',
+        texto:
+          estado === 'completada'
+            ? `Venta #${ventaRegistrada.numero_ticket} registrada.${
+                vuelto > 0 ? ` Vuelto a entregar: ₡${vuelto.toLocaleString('es-CR')}` : ''
+              }`
+            : `Ticket #${ventaRegistrada.numero_ticket} guardado en espera (F6).`,
+        accion:
+          estado === 'completada' && !imprimirAhora
+            ? {
+                etiqueta: (
+                  <>
+                    <i className="bi bi-printer me-1" />Imprimir tiquete
+                  </>
+                ),
+                alHacerClic: () => imprimirTicket(ventaRegistrada, configuracion),
+              }
+            : undefined,
       });
       inputScanRef.current?.focus();
-    } catch (err: any) {
-      setMensaje({
-        tipo: 'danger',
-        texto: err.response?.data?.message || 'Error al procesar la venta.',
-      });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'Error al procesar la venta.') });
     } finally {
       setProcesandoVenta(false);
     }
   };
 
   const abrirTicketsEspera = async () => {
-    if (!turno) return;
+    if (!turno || cargandoLista) return;
+    setCargandoLista('espera');
     try {
       const res = await api.get(`/ventas?turno_id=${turno.id}&estado=en_espera`);
       setVentasEnEspera(res.data);
       setModalEspera(true);
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'No se pudieron cargar los tickets en espera.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudieron cargar los tickets en espera.') });
+    } finally {
+      setCargandoLista(null);
     }
   };
 
@@ -371,23 +490,23 @@ export const ModuloVentas: React.FC = () => {
     setErrorMovCaja(null);
     setProcesandoMovCaja(true);
     try {
-      await api.post(`/turnos/${turno.id}/movimientos`, {
-        usuario_id: usuario.id,
+      await postConReintento(`/turnos/${turno.id}/movimientos`, {
+        idempotency_key: claveMovCaja || generarClaveIdempotencia(modalCajaMov),
         tipo: modalCajaMov,
         metodo_pago: 'efectivo',
         monto: Number(movMonto),
         concepto: movConcepto,
       });
+      const monto = Number(movMonto);
       setMovMonto('');
       setMovConcepto('');
       setModalCajaMov(null);
-      setMensaje({ tipo: 'success', texto: 'Movimiento de efectivo registrado en gaveta.' });
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.errors?.monto?.[0] ||
-        err.response?.data?.message ||
-        'Error al registrar movimiento.';
-      setErrorMovCaja(msg);
+      setMensaje({
+        tipo: 'success',
+        texto: `${modalCajaMov === 'entrada' ? 'Entrada' : 'Salida'} de ₡${monto.toLocaleString('es-CR')} registrada en gaveta.`,
+      });
+    } catch (err) {
+      setErrorMovCaja(mensajeError(err, 'Error al registrar movimiento.'));
     } finally {
       setProcesandoMovCaja(false);
     }
@@ -406,12 +525,7 @@ export const ModuloVentas: React.FC = () => {
 
   return (
     <div className="container-fluid py-2" onClick={mantenerFocoEnLector}>
-      {mensaje && (
-        <div className={`alert alert-${mensaje.tipo} alert-dismissible fade show py-2 mb-2`}>
-          {mensaje.texto}
-          <button type="button" className="btn-close py-2" onClick={() => setMensaje(null)} />
-        </div>
-      )}
+      <AvisoFlotante aviso={mensaje} alCerrar={cerrarMensaje} />
 
       {/* Barra de búsqueda y botones de operación */}
       <div className="row g-2 mb-2 align-items-center">
@@ -426,7 +540,12 @@ export const ModuloVentas: React.FC = () => {
               className="form-control fw-semibold"
               placeholder="Nombre/Código de Producto"
               value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
+              onChange={(e) => {
+                setBusqueda(e.target.value);
+                setIndiceSugerencia(-1);
+              }}
+              onKeyDown={navegarSugerencias}
+              autoComplete="off"
               autoFocus
             />
             <button className="btn btn-primary fw-bold px-3" type="submit">
@@ -436,15 +555,18 @@ export const ModuloVentas: React.FC = () => {
 
           {sugerenciasBusqueda.length > 0 && (
             <div className="list-group position-absolute w-100 shadow z-3 mt-1">
-              {sugerenciasBusqueda.map((p) => (
+              {sugerenciasBusqueda.map((p, idx) => (
                 <button
                   key={p.id}
                   type="button"
-                  className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                  className={`list-group-item list-group-item-action d-flex justify-content-between align-items-center${
+                    idx === indiceSugerencia ? ' active' : ''
+                  }`}
+                  onMouseEnter={() => setIndiceSugerencia(idx)}
                   onClick={() => {
-                    const err = agregarAlCarrito(p, 1);
-                    if (err) setMensaje({ tipo: 'danger', texto: err });
+                    agregarProducto(p, 1);
                     setBusqueda('');
+                    setIndiceSugerencia(-1);
                     inputScanRef.current?.focus();
                   }}
                 >
@@ -452,7 +574,7 @@ export const ModuloVentas: React.FC = () => {
                     <span className="badge bg-secondary me-2">{p.codigo_barras}</span>
                     <strong>{p.nombre}</strong>
                   </div>
-                  <span className="fw-bold text-success">₡{Number(p.precio_venta).toLocaleString()}</span>
+                  <span className={`fw-bold ${idx === indiceSugerencia ? '' : 'text-success'}`}>₡{Number(p.precio_venta).toLocaleString()}</span>
                 </button>
               ))}
             </div>
@@ -464,16 +586,27 @@ export const ModuloVentas: React.FC = () => {
           <button className="btn btn-accion-artesanal" onClick={() => setModalComun(true)}>
             + Artículo Común
           </button>
-          <button className="btn btn-accion-artesanal" onClick={() => confirmarVenta('en_espera')} disabled={carrito.length === 0}>
+          <BotonAccion
+            className="btn btn-accion-artesanal"
+            onClick={() => confirmarVenta('en_espera')}
+            disabled={carrito.length === 0}
+            cargando={procesandoVenta && !modalCobro}
+            textoCargando="Guardando..."
+          >
             <i className="bi bi-pause-circle me-1" />En Espera
-          </button>
-          <button className="btn btn-accion-artesanal" onClick={abrirTicketsEspera}>
+          </BotonAccion>
+          <BotonAccion
+            className="btn btn-accion-artesanal"
+            onClick={abrirTicketsEspera}
+            cargando={cargandoLista === 'espera'}
+            textoCargando="F6 Recuperar"
+          >
             F6 Recuperar
-          </button>
-          <button className="btn btn-outline-success fw-bold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('entrada'); }}>
+          </BotonAccion>
+          <button className="btn btn-outline-success fw-bold" onClick={() => abrirMovimientoCaja('entrada')}>
             F7 Entrada
           </button>
-          <button className="btn btn-outline-danger fw-bold" onClick={() => { setErrorMovCaja(null); setModalCajaMov('salida'); }}>
+          <button className="btn btn-outline-danger fw-bold" onClick={() => abrirMovimientoCaja('salida')}>
             F8 Salida
           </button>
         </div>
@@ -593,12 +726,19 @@ export const ModuloVentas: React.FC = () => {
                         className="btn btn-pan-rapido w-100 h-100 p-3 text-center d-flex align-items-center justify-content-center"
                         style={{ minHeight: '85px' }}
                         onClick={() => {
-                          const err = agregarAlCarrito(p, 1);
-                          if (err) setMensaje({ tipo: 'danger', texto: err });
+                          agregarProducto(p, 1);
                           inputScanRef.current?.focus();
                         }}
                       >
-                        <span className="fw-bold fs-6 lh-sm text-wrap">{p.nombre}</span>
+                        <span className="d-flex flex-column align-items-center gap-1">
+                          <span className="fw-bold fs-6 lh-sm text-wrap">{p.nombre}</span>
+                          <span className="panpos-precio-rapido">₡{Number(p.precio_venta).toLocaleString('es-CR')}</span>
+                          {p.controlar_stock && Number(p.stock_actual) <= 5 && (
+                            <span className={`badge ${Number(p.stock_actual) <= 0 ? 'bg-danger' : 'bg-warning text-dark'}`}>
+                              {Number(p.stock_actual) <= 0 ? 'Agotado' : `Quedan ${p.stock_actual}`}
+                            </span>
+                          )}
+                        </span>
                       </button>
                     </div>
                   ))}
@@ -655,10 +795,24 @@ export const ModuloVentas: React.FC = () => {
         </div>
       </div>
 
-      <div className="d-flex justify-content-end mt-2">
-        <button className="btn btn-accion-artesanal px-4 py-2 fw-bold" onClick={abrirVentasDelDia}>
+      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+        <div className="panpos-atajos small text-muted">
+          <span><kbd>F12</kbd> Cobrar</span>
+          <span><kbd>F6</kbd> Recuperar</span>
+          <span><kbd>F7</kbd> Entrada</span>
+          <span><kbd>F8</kbd> Salida</span>
+          <span><kbd>3*</kbd><kbd>código</kbd> Cantidad</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> Elegir producto</span>
+          <span><kbd>Esc</kbd> Cerrar</span>
+        </div>
+        <BotonAccion
+          className="btn btn-accion-artesanal px-4 py-2 fw-bold"
+          onClick={abrirVentasDelDia}
+          cargando={cargandoLista === 'ventas_dia'}
+          textoCargando="Cargando ventas..."
+        >
           <i className="bi bi-receipt me-1" />Ventas del Día
-        </button>
+        </BotonAccion>
       </div>
 
       {/* Modal Ventas del Día (Ver tickets y eliminar/anular) */}
@@ -672,12 +826,41 @@ export const ModuloVentas: React.FC = () => {
                 </h5>
                 <button type="button" className="btn-close btn-close-white" onClick={() => setModalVentasDia(false)} />
               </div>
+              <div className="px-3 py-2 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2 bg-body-tertiary">
+                <div className="btn-group btn-group-sm" role="group" aria-label="Filtrar tickets">
+                  {(
+                    [
+                      ['todas', 'Todas'],
+                      ['completada', 'Completadas'],
+                      ['anulada', 'Anuladas'],
+                      ['en_espera', 'En espera'],
+                    ] as const
+                  ).map(([valor, etiqueta]) => (
+                    <button
+                      key={valor}
+                      type="button"
+                      className={`btn fw-semibold ${filtroVentasDia === valor ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setFiltroVentasDia(valor)}
+                    >
+                      {etiqueta} ({valor === 'todas' ? ventasDia.length : ventasDia.filter((v) => v.estado === valor).length})
+                    </button>
+                  ))}
+                </div>
+                <div className="d-flex flex-wrap gap-2 small">
+                  {Object.entries(totalesPorMetodo).map(([metodo, total]) => (
+                    <span key={metodo} className="badge text-bg-light border fw-semibold text-uppercase">
+                      {metodo}: ₡{total.toLocaleString('es-CR')}
+                    </span>
+                  ))}
+                </div>
+              </div>
               <div className="modal-body p-0">
                 <table className="table table-hover align-middle mb-0">
                   <thead className="table-dark">
                     <tr>
                       <th>Ticket #</th>
                       <th>Hora</th>
+                      <th>Cajero</th>
                       <th>Cliente</th>
                       <th>Artículos</th>
                       <th>Método de Pago</th>
@@ -687,17 +870,18 @@ export const ModuloVentas: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {ventasDia.length === 0 ? (
+                    {ventasDiaFiltradas.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center text-muted py-4">
-                          Aún no hay ventas registradas en este turno.
+                        <td colSpan={9} className="text-center text-muted py-4">
+                          {ventasDia.length === 0 ? 'Aún no hay ventas registradas en este turno.' : 'No hay tickets con este filtro.'}
                         </td>
                       </tr>
                     ) : (
-                      ventasDia.map((v) => (
+                      ventasDiaFiltradas.map((v) => (
                         <tr key={v.id} className={v.estado === 'anulada' ? 'table-danger' : ''}>
                           <td className="fw-bold">#{v.numero_ticket}</td>
                           <td className="small">{new Date(v.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                          <td className="small">{v.usuario?.nombre || '—'}</td>
                           <td>{v.cliente?.nombre || 'Contado'}</td>
                           <td className="small">
                             {v.detalles.map((d: any) => `${d.cantidad}x ${d.descripcion_producto}`).join(', ')}
@@ -732,15 +916,26 @@ export const ModuloVentas: React.FC = () => {
                             </span>
                           </td>
                           <td className="text-end fw-bold">₡{Number(v.total).toLocaleString()}</td>
-                          <td className="text-end">
-                            {v.estado !== 'anulada' && (
+                          <td className="text-end text-nowrap">
+                            {v.estado === 'completada' && (
                               <button
+                                className="btn btn-sm btn-outline-secondary fw-bold me-1"
+                                title="Reimprimir tiquete"
+                                onClick={() => imprimirTicket(v, configuracion, true)}
+                              >
+                                <i className="bi bi-printer" />
+                              </button>
+                            )}
+                            {v.estado !== 'anulada' && (
+                              <BotonAccion
                                 className="btn btn-sm btn-outline-danger fw-bold"
-                                disabled={anulandoId === v.id}
+                                disabled={anulandoId !== null && anulandoId !== v.id}
+                                cargando={anulandoId === v.id}
+                                textoCargando="Anulando..."
                                 onClick={() => eliminarTicketDelDia(v.id, v.numero_ticket)}
                               >
-                                {anulandoId === v.id ? 'Anulando...' : <><i className="bi bi-trash me-1" />Eliminar</>}
-                              </button>
+                                <i className="bi bi-trash me-1" />Eliminar
+                              </BotonAccion>
                             )}
                           </td>
                         </tr>
@@ -757,7 +952,7 @@ export const ModuloVentas: React.FC = () => {
                     .reduce((acc, v) => acc + Number(v.total), 0)
                     .toLocaleString()}
                 </span>
-                <button className="btn btn-secondary fw-bold" onClick={() => setModalVentasDia(false)}>
+                <button className="btn btn-secondary fw-bold" disabled={anulandoId !== null} onClick={() => setModalVentasDia(false)}>
                   Cerrar
                 </button>
               </div>
@@ -779,18 +974,27 @@ export const ModuloVentas: React.FC = () => {
             >
               <div className="modal-header bg-success text-white">
                 <h5 className="modal-title fw-bold">Confirmar Cobro — Total: ₡{totalVenta.toLocaleString()}</h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setModalCobro(false)} />
+                <button type="button" className="btn-close btn-close-white" disabled={procesandoVenta} onClick={() => setModalCobro(false)} />
               </div>
               <div className="modal-body">
                 <div className="btn-group w-100 mb-3">
-                  {(['efectivo', 'sinpe', 'tarjeta', 'credito', 'mixto'] as const).map((m) => (
+                  {(
+                    [
+                      ['efectivo', 'bi-cash-stack', 'Efectivo'],
+                      ['sinpe', 'bi-phone', 'SINPE'],
+                      ['tarjeta', 'bi-credit-card', 'Tarjeta'],
+                      ['credito', 'bi-journal-text', 'Crédito'],
+                      ['mixto', 'bi-shuffle', 'Mixto'],
+                    ] as const
+                  ).map(([m, icono, etiqueta]) => (
                     <button
                       key={m}
                       type="button"
                       className={`btn btn-lg fw-bold ${metodoPrincipal === m ? 'btn-primary' : 'btn-outline-primary'}`}
                       onClick={() => setMetodoPrincipal(m)}
                     >
-                      {m.toUpperCase()}
+                      <i className={`bi ${icono} me-1`} />
+                      {etiqueta}
                     </button>
                   ))}
                 </div>
@@ -810,6 +1014,16 @@ export const ModuloVentas: React.FC = () => {
                         </option>
                       ))}
                     </select>
+                  </div>
+                )}
+
+                {(metodoPrincipal === 'sinpe' || metodoPrincipal === 'mixto') && configuracion['sinpe_telefono_receptor'] && (
+                  <div className="panpos-sinpe-info mb-3">
+                    <i className="bi bi-phone-fill fs-3" />
+                    <div>
+                      <div className="small fw-bold text-uppercase">SINPE Móvil del negocio</div>
+                      <div className="fs-4 fw-bolder">{configuracion['sinpe_telefono_receptor']}</div>
+                    </div>
                   </div>
                 )}
 
@@ -882,6 +1096,13 @@ export const ModuloVentas: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {excedeLimiteCredito && (
+                  <div className="alert alert-warning py-2 mt-3 mb-0 small fw-bold">
+                    <i className="bi bi-exclamation-triangle-fill me-1" />
+                    Con esta venta {clienteCredito?.nombre} quedaría debiendo ₡{deudaResultante.toLocaleString('es-CR')}, más que el
+                    límite sugerido de ₡{limiteCredito.toLocaleString('es-CR')}.
+                  </div>
+                )}
                 {faltaClienteCredito && (
                   <div className="alert alert-warning py-2 mt-3 mb-0 small fw-bold">
                     <i className="bi bi-exclamation-triangle-fill me-1" />Debe seleccionar un cliente para registrar una venta a crédito.
@@ -899,16 +1120,31 @@ export const ModuloVentas: React.FC = () => {
                 )}
               </div>
               <div className="modal-footer">
+                <div className="form-check form-switch me-auto">
+                  <input
+                    id="imprimir-al-cobrar"
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={imprimirAlCobrar}
+                    onChange={(e) => setImprimirAlCobrar(e.target.checked)}
+                  />
+                  <label className="form-check-label fw-semibold" htmlFor="imprimir-al-cobrar">
+                    <i className="bi bi-printer me-1" />Imprimir tiquete
+                  </label>
+                </div>
                 <button type="button" className="btn btn-secondary btn-lg" disabled={procesandoVenta} onClick={() => setModalCobro(false)}>
                   Cancelar (ESC)
                 </button>
-                <button
+                <BotonAccion
                   type="submit"
                   className="btn btn-success btn-lg px-5 fw-bold"
-                  disabled={procesandoVenta || !cobroValido}
+                  disabled={!cobroValido}
+                  cargando={procesandoVenta}
+                  textoCargando="Registrando venta..."
+                  textoLento="El servidor está ocupado, reintentando..."
                 >
-                  {procesandoVenta ? 'Registrando venta...' : 'Confirmar y Registrar Venta'}
-                </button>
+                  Confirmar y Registrar Venta
+                </BotonAccion>
               </div>
             </form>
           </div>
@@ -964,10 +1200,20 @@ export const ModuloVentas: React.FC = () => {
                 <h5 className="modal-title fw-bold">
                   {modalCajaMov === 'entrada' ? 'F7 - Registrar Entrada de Efectivo' : 'F8 - Registrar Salida de Efectivo'}
                 </h5>
-                <button type="button" className="btn-close" onClick={() => setModalCajaMov(null)} />
+                <button type="button" className="btn-close" disabled={procesandoMovCaja} onClick={() => setModalCajaMov(null)} />
               </div>
               <div className="modal-body">
                 {errorMovCaja && <div className="alert alert-danger fw-semibold">{errorMovCaja}</div>}
+                {modalCajaMov === 'salida' && (
+                  <div className="d-flex justify-content-between align-items-center p-2 px-3 mb-3 rounded bg-body-secondary small">
+                    <span className="fw-semibold">Efectivo disponible en gaveta:</span>
+                    <strong className="fs-6">
+                      {efectivoDisponible === null
+                        ? 'Consultando...'
+                        : `₡${efectivoDisponible.toLocaleString('es-CR', { minimumFractionDigits: 2 })}`}
+                    </strong>
+                  </div>
+                )}
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Monto en Efectivo (₡)</label>
                   <input type="number" min="1" className="form-control form-control-lg" value={movMonto} onChange={(e) => setMovMonto(e.target.value)} autoFocus required />
@@ -978,7 +1224,15 @@ export const ModuloVentas: React.FC = () => {
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="submit" className="btn btn-primary w-100 fw-bold" disabled={procesandoMovCaja}>{procesandoMovCaja ? 'Guardando...' : 'Guardar Movimiento'}</button>
+                <BotonAccion
+                  type="submit"
+                  className="btn btn-primary w-100 fw-bold"
+                  cargando={procesandoMovCaja}
+                  textoCargando="Guardando movimiento..."
+                  textoLento="El servidor está ocupado, reintentando..."
+                >
+                  Guardar Movimiento
+                </BotonAccion>
               </div>
             </form>
           </div>

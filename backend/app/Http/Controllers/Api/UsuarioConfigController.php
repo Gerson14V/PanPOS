@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ConfiguracionSistema;
 use App\Models\TurnoCaja;
 use App\Models\Usuario;
+use App\Services\BackupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -46,6 +47,8 @@ class UsuarioConfigController extends Controller
         'fe_cabys_default',
         'fe_usuario_atv',
         'fe_ruta_p12',
+        'impresion_silenciosa',
+        'sonidos_caja',
     ];
 
     private const CLAVES_RUTA = [
@@ -98,9 +101,13 @@ class UsuarioConfigController extends Controller
         $usuario->tokens()->delete();
         $token = $usuario->createToken('panpos-terminal')->plainTextToken;
 
+        // Primer ingreso del día: respaldo automático de la base de datos
+        $respaldoDiario = app(BackupService::class)->respaldoDiarioSiFalta();
+
         return response()->json([
             'usuario' => $usuario,
             'token' => $token,
+            'respaldo_diario' => $respaldoDiario ? $respaldoDiario['archivo'] : null,
         ]);
     }
 
@@ -241,8 +248,31 @@ class UsuarioConfigController extends Controller
                 ['clave' => $clave],
                 ['valor' => $valorStr]
             );
+
+            if ($clave === 'impresion_silenciosa') {
+                $this->sincronizarMarcaImpresionSilenciosa($valorStr === '1');
+            }
         }
 
         return response()->json(ConfiguracionSistema::pluck('valor', 'clave'));
+    }
+
+    /**
+     * El lanzador de Windows (Iniciar_PanPOS.vbs) abre el navegador con
+     * --kiosk-printing cuando existe este archivo junto a la carpeta app/:
+     * los tiquetes salen directo a la impresora predeterminada sin diálogo.
+     */
+    private function sincronizarMarcaImpresionSilenciosa(bool $activa): void
+    {
+        $marca = dirname(base_path()) . DIRECTORY_SEPARATOR . 'impresion_silenciosa.activar';
+        try {
+            if ($activa) {
+                @file_put_contents($marca, "Creado desde Configuracion > Impresora de PanPOS\n");
+            } elseif (is_file($marca)) {
+                @unlink($marca);
+            }
+        } catch (\Throwable $e) {
+            // No crítico: solo afecta si el tiquete muestra o no el diálogo de impresión
+        }
     }
 }

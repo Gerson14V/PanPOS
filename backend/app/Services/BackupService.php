@@ -57,6 +57,33 @@ class BackupService
         ];
     }
 
+    /**
+     * Respaldo automático una vez al día (se llama al iniciar sesión).
+     * Protege los datos aunque un turno quede abierto varios días sin cerrarse.
+     * Devuelve null si ya existía el respaldo de hoy o si falló (nunca bloquea el ingreso).
+     */
+    public function respaldoDiarioSiFalta(): ?array
+    {
+        $hoy = now()->toDateString();
+        if (ConfiguracionSistema::where('clave', 'ultimo_respaldo_diario')->value('valor') === $hoy) {
+            return null;
+        }
+
+        try {
+            $respaldo = $this->generarRespaldo('diario');
+            ConfiguracionSistema::updateOrCreate(
+                ['clave' => 'ultimo_respaldo_diario'],
+                ['valor' => $hoy, 'descripcion' => 'Fecha del último respaldo automático diario']
+            );
+
+            return $respaldo;
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo generar el respaldo diario automático: ' . $e->getMessage());
+
+            return null;
+        }
+    }
+
     private function rotarRespaldosAntiguos(string $directorio): void
     {
         try {

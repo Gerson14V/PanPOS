@@ -40,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('turnos/corte-dia', [TurnoCajaController::class, 'resumenDia']);
     Route::post('turnos/abrir', [TurnoCajaController::class, 'abrir']);
     Route::get('turnos/{turno}/resumen', [TurnoCajaController::class, 'resumen']);
+    Route::get('turnos/{turno}/efectivo', [TurnoCajaController::class, 'efectivoDisponible']);
     Route::post('turnos/{turno}/movimientos', [TurnoCajaController::class, 'registrarMovimiento']);
     Route::post('turnos/{turno}/cerrar', [TurnoCajaController::class, 'cerrar']);
     Route::get('turnos/{turno}/exportar-excel', [ReporteBackupController::class, 'exportarCorteExcel']);

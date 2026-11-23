@@ -19,6 +19,7 @@ class MovimientoCaja extends Model
         'metodo_pago',
         'monto',
         'concepto',
+        'idempotency_key',
     ];
 
     protected $casts = [

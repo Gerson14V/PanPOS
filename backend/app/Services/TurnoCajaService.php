@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Cliente;
 use App\Models\MovimientoCaja;
 use App\Models\TurnoCaja;
+use App\Models\Venta;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -51,7 +52,24 @@ class TurnoCajaService
 
     public function registrarMovimientoCaja(array $datos): MovimientoCaja
     {
-        return DB::transaction(function () use ($datos) {
+        $idempotencyKey = !empty($datos['idempotency_key']) ? trim((string) $datos['idempotency_key']) : null;
+
+        // Reintento de una petición que ya se guardó: devolver el mismo movimiento sin duplicarlo
+        if ($idempotencyKey !== null) {
+            $existente = MovimientoCaja::where('idempotency_key', $idempotencyKey)->first();
+            if ($existente) {
+                return $existente->load(['cliente', 'usuario:id,nombre']);
+            }
+        }
+
+        return DB::transaction(function () use ($datos, $idempotencyKey) {
+            if ($idempotencyKey !== null) {
+                $existente = MovimientoCaja::where('idempotency_key', $idempotencyKey)->first();
+                if ($existente) {
+                    return $existente->load(['cliente', 'usuario:id,nombre']);
+                }
+            }
+
             $turno = TurnoCaja::lockForUpdate()->findOrFail($datos['turno_id']);
 
             if ($turno->estado !== 'abierto') {
@@ -107,6 +125,7 @@ class TurnoCajaService
                 'metodo_pago' => $metodoPago,
                 'monto' => $monto,
                 'concepto' => $datos['concepto'],
+                'idempotency_key' => $idempotencyKey,
             ]);
 
             return $movimiento->load(['cliente', 'usuario:id,nombre']);
@@ -115,85 +134,13 @@ class TurnoCajaService
 
     public function obtenerResumenTurno(TurnoCaja $turno): array
     {
-        $pagosPorMetodo = DB::table('pagos_venta')
-            ->join('ventas', 'pagos_venta.venta_id', '=', 'ventas.id')
-            ->where('ventas.turno_id', $turno->id)
-            ->where('ventas.estado', 'completada')
-            ->selectRaw('pagos_venta.metodo_pago, SUM(pagos_venta.monto) as total')
-            ->groupBy('pagos_venta.metodo_pago')
-            ->pluck('total', 'metodo_pago');
+        $bloques = $this->construirBloquesResumen([$turno->id], (float) $turno->monto_inicial);
 
-        $ventasEfectivo = (float) ($pagosPorMetodo['efectivo'] ?? 0);
-        $ventasTarjeta = (float) ($pagosPorMetodo['tarjeta'] ?? 0);
-        $ventasSinpe = (float) ($pagosPorMetodo['sinpe'] ?? 0);
-        $ventasCredito = (float) ($pagosPorMetodo['credito'] ?? 0);
-
-        $movimientos = $turno->movimientosCaja()
-            ->with(['cliente:id,nombre', 'usuario:id,nombre'])
-            ->latest('created_at')
-            ->get();
-
-        $entradasEfectivo = (float) $movimientos->where('tipo', 'entrada')->where('metodo_pago', 'efectivo')->sum('monto');
-        $abonosEfectivo = (float) $movimientos->where('tipo', 'abono_cliente')->where('metodo_pago', 'efectivo')->sum('monto');
-        $salidasEfectivo = (float) $movimientos->where('tipo', 'salida')->where('metodo_pago', 'efectivo')->sum('monto');
-        $prestamosEfectivo = (float) $movimientos->where('tipo', 'prestamo_cliente')->where('metodo_pago', 'efectivo')->sum('monto');
-
-        $efectivoEsperado = (float) $turno->monto_inicial
-            + $ventasEfectivo
-            + $entradasEfectivo
-            + $abonosEfectivo
-            - $salidasEfectivo
-            - $prestamosEfectivo;
-
-        $porDepartamento = DB::table('detalle_ventas')
-            ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
-            ->leftJoin('productos', 'detalle_ventas.producto_id', '=', 'productos.id')
-            ->leftJoin('departamentos', 'productos.departamento_id', '=', 'departamentos.id')
-            ->where('ventas.turno_id', $turno->id)
-            ->where('ventas.estado', 'completada')
-            ->selectRaw("
-                COALESCE(departamentos.nombre, 'Artículo Común') as departamento,
-                SUM(detalle_ventas.subtotal) as total_ventas,
-                SUM(detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico) as costo_total,
-                SUM(detalle_ventas.subtotal - (detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico)) as ganancia_bruta
-            ")
-            ->groupBy('departamento')
-            ->get();
-
-        $ventasAnuladas = $turno->ventas()
-            ->with(['anuladaPor:id,nombre', 'detalles'])
-            ->where('estado', 'anulada')
-            ->get();
-
-        return [
+        return array_merge([
             'es_corte_dia' => false,
             'sin_datos' => false,
             'turno' => $turno->load('usuario:id,nombre'),
-            'ventas_totales' => round($ventasEfectivo + $ventasTarjeta + $ventasSinpe + $ventasCredito, 2),
-            'ganancia_bruta_total' => round((float) $porDepartamento->sum('ganancia_bruta'), 2),
-            'desglose_pagos' => [
-                'efectivo' => $ventasEfectivo,
-                'tarjeta' => $ventasTarjeta,
-                'sinpe' => $ventasSinpe,
-                'credito' => $ventasCredito,
-            ],
-            'gaveta_efectivo' => [
-                'monto_inicial' => (float) $turno->monto_inicial,
-                'ventas_efectivo' => $ventasEfectivo,
-                'abonos_efectivo' => $abonosEfectivo,
-                'entradas_efectivo' => $entradasEfectivo,
-                'salidas_efectivo' => $salidasEfectivo,
-                'prestamos_efectivo' => $prestamosEfectivo,
-                'efectivo_esperado' => round($efectivoEsperado, 2),
-            ],
-            'ventas_por_departamento' => $porDepartamento,
-            'movimientos_caja' => $movimientos,
-            'anulaciones' => [
-                'cantidad' => $ventasAnuladas->count(),
-                'monto_total_anulado' => (float) $ventasAnuladas->sum('total'),
-                'lista' => $ventasAnuladas,
-            ],
-        ];
+        ], $bloques);
     }
 
     // Lista únicamente fechas únicas que tienen al menos un turno registrado
@@ -241,8 +188,55 @@ class TurnoCajaService
             ];
         }
 
-        $turnosIds = $turnos->pluck('id')->all();
+        $bloques = $this->construirBloquesResumen(
+            $turnos->pluck('id')->all(),
+            (float) $turnos->sum('monto_inicial')
+        );
 
+        $tieneAbierto = $turnos->contains('estado', 'abierto');
+        $turnosCerrados = $turnos->where('estado', 'cerrado');
+        $cajeros = $turnos->pluck('usuario.nombre')->filter()->unique()->values()->all();
+
+        return array_merge([
+            'es_corte_dia' => true,
+            'sin_datos' => false,
+            'fecha' => $fecha,
+            'cantidad_turnos' => $turnos->count(),
+            'cajeros' => $cajeros,
+            'turno' => [
+                'id' => null,
+                'estado' => $tieneAbierto ? 'abierto' : 'cerrado',
+                'fecha_apertura' => $turnos->first()->fecha_apertura,
+                'fecha_cierre' => $tieneAbierto ? null : $turnos->last()->fecha_cierre,
+                'total_efectivo_contado' => $turnosCerrados->isNotEmpty()
+                    ? round((float) $turnosCerrados->sum('total_efectivo_contado'), 2)
+                    : null,
+                'diferencia_arqueo' => $turnosCerrados->isNotEmpty()
+                    ? round((float) $turnosCerrados->sum('diferencia_arqueo'), 2)
+                    : null,
+                'usuario' => ['nombre' => implode(', ', $cajeros)],
+            ],
+            // Detalle por turno para ver qué cajero tuvo sobrante o faltante
+            'turnos_del_dia' => $turnos->map(fn (TurnoCaja $t) => [
+                'id' => $t->id,
+                'cajero' => $t->usuario?->nombre,
+                'estado' => $t->estado,
+                'fecha_apertura' => $t->fecha_apertura,
+                'fecha_cierre' => $t->fecha_cierre,
+                'monto_inicial' => (float) $t->monto_inicial,
+                'total_efectivo_esperado' => $t->total_efectivo_esperado !== null ? (float) $t->total_efectivo_esperado : null,
+                'total_efectivo_contado' => $t->total_efectivo_contado !== null ? (float) $t->total_efectivo_contado : null,
+                'diferencia_arqueo' => $t->diferencia_arqueo !== null ? (float) $t->diferencia_arqueo : null,
+            ])->values(),
+        ], $bloques);
+    }
+
+    /**
+     * Calcula las secciones comunes del corte (pagos, gaveta, departamentos,
+     * anulaciones, estadísticas y productos más vendidos) para uno o varios turnos.
+     */
+    private function construirBloquesResumen(array $turnosIds, float $montoInicial): array
+    {
         $pagosPorMetodo = DB::table('pagos_venta')
             ->join('ventas', 'pagos_venta.venta_id', '=', 'ventas.id')
             ->whereIn('ventas.turno_id', $turnosIds)
@@ -261,13 +255,13 @@ class TurnoCajaService
             ->latest('created_at')
             ->get();
 
-        $montoInicialTotal = (float) $turnos->sum('monto_inicial');
-        $entradasEfectivo = (float) $movimientos->where('tipo', 'entrada')->where('metodo_pago', 'efectivo')->sum('monto');
-        $abonosEfectivo = (float) $movimientos->where('tipo', 'abono_cliente')->where('metodo_pago', 'efectivo')->sum('monto');
-        $salidasEfectivo = (float) $movimientos->where('tipo', 'salida')->where('metodo_pago', 'efectivo')->sum('monto');
-        $prestamosEfectivo = (float) $movimientos->where('tipo', 'prestamo_cliente')->where('metodo_pago', 'efectivo')->sum('monto');
+        $efectivo = $movimientos->where('metodo_pago', 'efectivo');
+        $entradasEfectivo = (float) $efectivo->where('tipo', 'entrada')->sum('monto');
+        $abonosEfectivo = (float) $efectivo->where('tipo', 'abono_cliente')->sum('monto');
+        $salidasEfectivo = (float) $efectivo->where('tipo', 'salida')->sum('monto');
+        $prestamosEfectivo = (float) $efectivo->where('tipo', 'prestamo_cliente')->sum('monto');
 
-        $efectivoEsperado = $montoInicialTotal
+        $efectivoEsperado = $montoInicial
             + $ventasEfectivo
             + $entradasEfectivo
             + $abonosEfectivo
@@ -282,48 +276,43 @@ class TurnoCajaService
             ->where('ventas.estado', 'completada')
             ->selectRaw("
                 COALESCE(departamentos.nombre, 'Artículo Común') as departamento,
+                SUM(detalle_ventas.cantidad) as unidades_vendidas,
                 SUM(detalle_ventas.subtotal) as total_ventas,
                 SUM(detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico) as costo_total,
                 SUM(detalle_ventas.subtotal - (detalle_ventas.cantidad * detalle_ventas.costo_unitario_historico)) as ganancia_bruta
             ")
             ->groupBy('departamento')
+            ->orderByDesc('total_ventas')
             ->get();
 
-        $ventasAnuladas = \App\Models\Venta::with(['anuladaPor:id,nombre', 'detalles'])
+        $topProductos = DB::table('detalle_ventas')
+            ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
+            ->whereIn('ventas.turno_id', $turnosIds)
+            ->where('ventas.estado', 'completada')
+            ->selectRaw('detalle_ventas.descripcion_producto as nombre, SUM(detalle_ventas.cantidad) as unidades, SUM(detalle_ventas.subtotal) as total')
+            ->groupBy('detalle_ventas.descripcion_producto')
+            ->orderByDesc('unidades')
+            ->orderByDesc('total')
+            ->limit(8)
+            ->get();
+
+        $estadisticas = DB::table('ventas')
+            ->whereIn('turno_id', $turnosIds)
+            ->where('estado', 'completada')
+            ->selectRaw('COUNT(id) as tickets, COALESCE(SUM(total), 0) as total, MIN(created_at) as primera, MAX(created_at) as ultima')
+            ->first();
+
+        $tickets = (int) ($estadisticas->tickets ?? 0);
+        $ventasTotales = round($ventasEfectivo + $ventasTarjeta + $ventasSinpe + $ventasCredito, 2);
+
+        $ventasAnuladas = Venta::with(['anuladaPor:id,nombre', 'detalles'])
             ->whereIn('turno_id', $turnosIds)
             ->where('estado', 'anulada')
+            ->latest('fecha_anulacion')
             ->get();
 
-        $tieneAbierto = $turnos->contains('estado', 'abierto');
-        $turnosCerrados = $turnos->where('estado', 'cerrado');
-        $primerTurno = $turnos->first();
-        $ultimoTurno = $turnos->last();
-        $cajeros = $turnos->pluck('usuario.nombre')->filter()->unique()->values()->all();
-
-        $totalContadoCerrados = $turnosCerrados->isNotEmpty()
-            ? round((float) $turnosCerrados->sum('total_efectivo_contado'), 2)
-            : null;
-
-        $diferenciaTotal = $turnosCerrados->isNotEmpty()
-            ? round((float) $turnosCerrados->sum('diferencia_arqueo'), 2)
-            : null;
-
         return [
-            'es_corte_dia' => true,
-            'sin_datos' => false,
-            'fecha' => $fecha,
-            'cantidad_turnos' => $turnos->count(),
-            'cajeros' => $cajeros,
-            'turno' => [
-                'id' => null,
-                'estado' => $tieneAbierto ? 'abierto' : 'cerrado',
-                'fecha_apertura' => $primerTurno->fecha_apertura,
-                'fecha_cierre' => $tieneAbierto ? null : $ultimoTurno->fecha_cierre,
-                'total_efectivo_contado' => $totalContadoCerrados,
-                'diferencia_arqueo' => $diferenciaTotal,
-                'usuario' => ['nombre' => implode(', ', $cajeros)],
-            ],
-            'ventas_totales' => round($ventasEfectivo + $ventasTarjeta + $ventasSinpe + $ventasCredito, 2),
+            'ventas_totales' => $ventasTotales,
             'ganancia_bruta_total' => round((float) $porDepartamento->sum('ganancia_bruta'), 2),
             'desglose_pagos' => [
                 'efectivo' => $ventasEfectivo,
@@ -332,7 +321,7 @@ class TurnoCajaService
                 'credito' => $ventasCredito,
             ],
             'gaveta_efectivo' => [
-                'monto_inicial' => $montoInicialTotal,
+                'monto_inicial' => $montoInicial,
                 'ventas_efectivo' => $ventasEfectivo,
                 'abonos_efectivo' => $abonosEfectivo,
                 'entradas_efectivo' => $entradasEfectivo,
@@ -340,7 +329,15 @@ class TurnoCajaService
                 'prestamos_efectivo' => $prestamosEfectivo,
                 'efectivo_esperado' => round($efectivoEsperado, 2),
             ],
+            'estadisticas' => [
+                'cantidad_tickets' => $tickets,
+                'ticket_promedio' => $tickets > 0 ? round($ventasTotales / $tickets, 2) : 0,
+                'articulos_vendidos' => (int) $porDepartamento->sum('unidades_vendidas'),
+                'primera_venta' => $estadisticas->primera ?? null,
+                'ultima_venta' => $estadisticas->ultima ?? null,
+            ],
             'ventas_por_departamento' => $porDepartamento,
+            'top_productos' => $topProductos,
             'movimientos_caja' => $movimientos,
             'anulaciones' => [
                 'cantidad' => $ventasAnuladas->count(),
@@ -369,8 +366,7 @@ class TurnoCajaService
                     'fecha_anulacion' => now(),
                 ]);
 
-            $resumen = $this->obtenerResumenTurno($turnoBloqueado);
-            $esperado = $resumen['gaveta_efectivo']['efectivo_esperado'];
+            $esperado = $this->calcularEfectivoDisponible($turnoBloqueado);
             $diferencia = round($efectivoContado - $esperado, 2);
 
             $turnoBloqueado->update([

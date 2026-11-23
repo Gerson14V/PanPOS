@@ -68,3 +68,18 @@ export interface PagoItem {
   monto_recibido?: number;
   vuelto_entregado?: number;
 }
+
+/** Existencia actualizada que el servidor devuelve después de una venta o anulación. */
+export interface StockActualizado {
+  id: number;
+  stock_actual: number;
+}
+
+export interface RespuestaVenta {
+  id: number;
+  numero_ticket: number;
+  total: number;
+  estado: 'completada' | 'en_espera' | 'anulada';
+  motivo_anulacion?: string | null;
+  productos_actualizados?: StockActualizado[];
+}

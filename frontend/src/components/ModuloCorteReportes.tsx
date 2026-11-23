@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { usePos } from '../context/PosContext';
-import { api } from '../api/client';
+import { api, mensajeError } from '../api/client';
 import { fechaLocalISO } from '../utils/fechaLocal';
+import { BotonAccion } from './BotonAccion';
+import { imprimirCorte } from '../utils/ticket';
 
 const DENOMINACIONES_CR = [
   { valor: 20000, label: '₡20,000', tipo: 'Billete' },
@@ -28,6 +30,12 @@ interface FechaDisponible {
   estado: 'abierto' | 'cerrado';
 }
 
+const colones = (n: unknown): string =>
+  `₡${Number(n || 0).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const horaCorta = (fecha?: string | null): string =>
+  fecha ? new Date(fecha).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+
 const formatearFechaCorta = (ymd: string): string => {
   if (!ymd) return '';
   return new Date(`${ymd}T12:00:00`).toLocaleDateString('es-CR', {
@@ -38,7 +46,7 @@ const formatearFechaCorta = (ymd: string): string => {
 };
 
 export const ModuloCorteReportes: React.FC = () => {
-  const { turno, setTurno, setUsuario, limpiarCarrito, usuario } = usePos();
+  const { turno, setTurno, setUsuario, limpiarCarrito, usuario, configuracion } = usePos();
 
   const hoyStr = fechaLocalISO();
   const [vista, setVista] = useState<VistaModulo>('corte');
@@ -56,6 +64,10 @@ export const ModuloCorteReportes: React.FC = () => {
   const [efectivoContadoManual, setEfectivoContadoManual] = useState<string>('');
   const [observaciones, setObservaciones] = useState('');
   const [cerrando, setCerrando] = useState(false);
+  const [cargandoCorte, setCargandoCorte] = useState(false);
+  const [descargandoExcel, setDescargandoExcel] = useState(false);
+  // Evita que una respuesta lenta de un corte anterior reemplace al que se está viendo
+  const consultaCorteRef = useRef(0);
 
   // Estados de Reportes y Gráficos (Un Día Específico / Semana / Mes / Intervalo)
   const [tipoPeriodo, setTipoPeriodo] = useState<TipoPeriodo>('un_dia');
@@ -74,30 +86,38 @@ export const ModuloCorteReportes: React.FC = () => {
     }
   };
 
-  const cargarCorteCajero = async (idTurno: number) => {
+  const cargarCorte = async (url: string, errorPorDefecto: string) => {
+    const idConsulta = ++consultaCorteRef.current;
+    setCargandoCorte(true);
     try {
-      const resCorte = await api.get(`/turnos/${idTurno}/resumen`);
-      setResumen(resCorte.data);
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'Error al cargar el corte del cajero.' });
+      const resCorte = await api.get(url);
+      if (idConsulta === consultaCorteRef.current) setResumen(resCorte.data);
+    } catch (err) {
+      if (idConsulta === consultaCorteRef.current) {
+        setMensaje({ tipo: 'danger', texto: mensajeError(err, errorPorDefecto) });
+      }
+    } finally {
+      if (idConsulta === consultaCorteRef.current) setCargandoCorte(false);
     }
   };
 
-  const cargarCorteDia = async (fecha: string) => {
-    try {
-      const resCorte = await api.get(`/turnos/corte-dia?fecha=${fecha}`);
-      setResumen(resCorte.data);
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'Error al cargar el corte completo del día.' });
-    }
+  const cargarCorteCajero = (idTurno: number) =>
+    cargarCorte(`/turnos/${idTurno}/resumen`, 'Error al cargar el corte del cajero.');
+
+  const cargarCorteDia = (fecha: string) =>
+    cargarCorte(`/turnos/corte-dia?fecha=${fecha}`, 'Error al cargar el corte completo del día.');
+
+  const recargarCorteActual = () => {
+    if (modoCorte === 'cajero' && turno) cargarCorteCajero(turno.id);
+    else cargarCorteDia(fechaCorteDia);
   };
 
   const cargarReportePeriodo = async (fDesde = desde, fHasta = hasta) => {
     try {
       const res = await api.get(`/reportes/ventas-periodo?desde=${fDesde}&hasta=${fHasta}`);
       setReporte(res.data);
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'Error al consultar el reporte del período.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'Error al consultar el reporte del período.') });
     }
   };
 
@@ -177,7 +197,7 @@ export const ModuloCorteReportes: React.FC = () => {
 
   const cerrarTurnoDefinitivo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!turno || efectivoContadoFinal === null) return;
+    if (!turno || efectivoContadoFinal === null || cerrando) return;
     if (!window.confirm(`¿Confirmar CIERRE DE CAJA con ₡${efectivoContadoFinal.toLocaleString()} contados en gaveta?`)) return;
 
     setCerrando(true);
@@ -190,6 +210,10 @@ export const ModuloCorteReportes: React.FC = () => {
         },
         { timeout: 60000 }
       );
+      // Tiquete de cierre con lo contado y la diferencia (si la impresión automática está activa)
+      if ((configuracion['impresion_escpos_activa'] ?? '0') === '1' && resumen && !resumen.sin_datos) {
+        imprimirCorte({ ...resumen, turno: { ...resumen.turno, ...res.data.turno } }, configuracion);
+      }
       const msgBackup = res.data.respaldo?.guardado
         ? `Respaldo BD: ${res.data.respaldo.archivo}`
         : 'Respaldo BD: No se pudo generar';
@@ -200,14 +224,16 @@ export const ModuloCorteReportes: React.FC = () => {
       limpiarCarrito();
       setTurno(null);
       setUsuario(null);
-    } catch (err: any) {
-      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'Error al cerrar turno.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'Error al cerrar turno.') });
     } finally {
       setCerrando(false);
     }
   };
 
   const descargarExcelCorte = async () => {
+    if (descargandoExcel) return;
+    setDescargandoExcel(true);
     try {
       const res = await api.get('/reportes/exportar-excel-diario', { responseType: 'blob' });
       const blob = new Blob([res.data], { type: 'application/vnd.ms-excel;charset=UTF-8' });
@@ -220,8 +246,10 @@ export const ModuloCorteReportes: React.FC = () => {
       a.remove();
       window.URL.revokeObjectURL(url);
       setMensaje({ tipo: 'success', texto: 'Excel diario actualizado y descargado correctamente.' });
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'No se pudo generar o descargar el Excel diario.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudo generar o descargar el Excel diario.') });
+    } finally {
+      setDescargandoExcel(false);
     }
   };
 
@@ -288,12 +316,33 @@ export const ModuloCorteReportes: React.FC = () => {
 
         {vista === 'corte' && (
           <div className="d-flex flex-wrap gap-2">
-            <button className="btn btn-outline-secondary fw-bold" onClick={() => window.print()}>
+            <BotonAccion
+              className="btn btn-outline-primary fw-bold"
+              onClick={recargarCorteActual}
+              cargando={cargandoCorte}
+              textoCargando="Actualizando..."
+            >
+              <i className="bi bi-arrow-clockwise me-1" />Actualizar
+            </BotonAccion>
+            <button className="btn btn-outline-secondary fw-bold" onClick={() => window.print()} title="Imprimir en hoja carta">
               <i className="bi bi-printer me-1" />Imprimir Corte
             </button>
-            <button className="btn btn-success fw-bold" onClick={descargarExcelCorte}>
-              <i className="bi bi-file-earmark-excel me-1" />Actualizar Excel Diario (.XLS)
+            <button
+              className="btn btn-outline-secondary fw-bold"
+              disabled={!resumen || resumen.sin_datos}
+              onClick={() => resumen && imprimirCorte(resumen, configuracion)}
+              title="Imprimir en la impresora térmica de tiquetes"
+            >
+              <i className="bi bi-receipt-cutoff me-1" />Tiquete de Corte
             </button>
+            <BotonAccion
+              className="btn btn-success fw-bold"
+              onClick={descargarExcelCorte}
+              cargando={descargandoExcel}
+              textoCargando="Generando Excel..."
+            >
+              <i className="bi bi-file-earmark-excel me-1" />Actualizar Excel Diario (.XLS)
+            </BotonAccion>
           </div>
         )}
       </div>
@@ -377,17 +426,33 @@ export const ModuloCorteReportes: React.FC = () => {
             </div>
           </div>
 
+          {/* Indicador de carga mientras llega el corte (primera carga) */}
+          {cargandoCorte && !resumen && (
+            <div className="card shadow-sm p-5 text-center text-muted mb-3">
+              <div className="spinner-border text-primary mx-auto mb-2" role="status" aria-hidden="true" />
+              <span className="fw-semibold">Calculando corte...</span>
+            </div>
+          )}
+
           {/* Mensaje si se eligió una fecha sin turnos */}
           {resumen?.sin_datos && (
             <div className="card shadow-sm p-5 text-center text-muted mb-3">
               <h5 className="fw-bold mb-1">Sin movimientos el {formatearFechaCorta(resumen.fecha)}</h5>
-              <p className="mb-0 small">No se registraron turnos ni ventas en esta fecha.</p>
+              <p className="mb-0 small">No se abrieron turnos en esta fecha.</p>
+              {turno && turno.fecha_apertura && fechaLocalISO(new Date(turno.fecha_apertura)) !== resumen.fecha && (
+                <div className="alert alert-warning d-inline-block mx-auto mt-3 mb-0 py-2 small fw-semibold">
+                  <i className="bi bi-exclamation-triangle-fill me-1" />
+                  El turno #{turno.id} sigue abierto desde el{' '}
+                  {new Date(turno.fecha_apertura).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}: sus ventas
+                  aparecen en <strong>Corte de Cajero</strong> y en el corte de ese día.
+                </div>
+              )}
             </div>
           )}
 
           {/* Hoja Limpia de Corte Estilo Eleventa */}
           {resumen && !resumen.sin_datos && (
-            <div className="card shadow-sm mb-3">
+            <div className={`card shadow-sm mb-3 panpos-corte-hoja${cargandoCorte ? ' is-actualizando' : ''}`}>
               <div className="card-header bg-body-tertiary py-3 px-4 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div>
                   {resumen.es_corte_dia ? (
@@ -453,10 +518,42 @@ export const ModuloCorteReportes: React.FC = () => {
               </div>
 
               <div className="card-body p-4">
+                {/* Indicadores rápidos del turno / día */}
+                {resumen.estadisticas && (
+                  <div className="row g-2 mb-4 panpos-corte-kpis">
+                    <div className="col-6 col-md-3">
+                      <div className="panpos-kpi">
+                        <span className="panpos-kpi-label"><i className="bi bi-receipt me-1" />Tickets</span>
+                        <span className="panpos-kpi-valor">{resumen.estadisticas.cantidad_tickets}</span>
+                      </div>
+                    </div>
+                    <div className="col-6 col-md-3">
+                      <div className="panpos-kpi">
+                        <span className="panpos-kpi-label"><i className="bi bi-calculator me-1" />Ticket promedio</span>
+                        <span className="panpos-kpi-valor">{colones(resumen.estadisticas.ticket_promedio)}</span>
+                      </div>
+                    </div>
+                    <div className="col-6 col-md-3">
+                      <div className="panpos-kpi">
+                        <span className="panpos-kpi-label"><i className="bi bi-basket2-fill me-1" />Artículos vendidos</span>
+                        <span className="panpos-kpi-valor">{resumen.estadisticas.articulos_vendidos}</span>
+                      </div>
+                    </div>
+                    <div className="col-6 col-md-3">
+                      <div className="panpos-kpi">
+                        <span className="panpos-kpi-label"><i className="bi bi-clock me-1" />Primera / última venta</span>
+                        <span className="panpos-kpi-valor">
+                          {horaCorta(resumen.estadisticas.primera_venta)} – {horaCorta(resumen.estadisticas.ultima_venta)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="row g-5">
                   <div className="col-lg-6">
                     <div className="d-flex justify-content-between align-items-baseline border-bottom pb-2 mb-4">
-                      <span className="fs-4 fw-bold text-primary">$ Ventas Totales</span>
+                      <span className="fs-4 fw-bold text-primary"><i className="bi bi-cash-coin me-1" />Ventas Totales</span>
                       <span className="fs-3 fw-bolder text-primary">
                         ₡{Number(resumen.ventas_totales).toLocaleString('es-CR', { minimumFractionDigits: 2 })}
                       </span>
@@ -604,6 +701,154 @@ export const ModuloCorteReportes: React.FC = () => {
             </div>
           )}
 
+          {/* Detalle adicional del corte: turnos, departamentos, productos y anulaciones */}
+          {resumen && !resumen.sin_datos && (
+            <div className="row g-3 mb-3">
+              {resumen.es_corte_dia && (resumen.turnos_del_dia || []).length > 0 && (
+                <div className="col-12">
+                  <div className="card shadow-sm">
+                    <div className="card-header fw-bold bg-body-tertiary">
+                      <i className="bi bi-people-fill me-1" />Turnos del día
+                    </div>
+                    <div className="table-responsive">
+                      <table className="table table-sm align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th className="ps-3">Turno</th>
+                            <th>Cajero</th>
+                            <th>Horario</th>
+                            <th className="text-end">Fondo</th>
+                            <th className="text-end">Esperado</th>
+                            <th className="text-end">Contado</th>
+                            <th className="text-end pe-3">Diferencia</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {resumen.turnos_del_dia.map((t: any) => (
+                            <tr key={t.id}>
+                              <td className="ps-3 fw-bold">#{t.id}</td>
+                              <td>{t.cajero || '—'}</td>
+                              <td className="small">
+                                {horaCorta(t.fecha_apertura)} – {t.estado === 'abierto' ? 'en curso' : horaCorta(t.fecha_cierre)}
+                              </td>
+                              <td className="text-end">{colones(t.monto_inicial)}</td>
+                              <td className="text-end">{t.total_efectivo_esperado === null ? '—' : colones(t.total_efectivo_esperado)}</td>
+                              <td className="text-end">{t.total_efectivo_contado === null ? '—' : colones(t.total_efectivo_contado)}</td>
+                              <td className="text-end pe-3">
+                                {t.diferencia_arqueo === null ? (
+                                  <span className="badge bg-success">EN CURSO</span>
+                                ) : (
+                                  <span
+                                    className={`fw-bold ${
+                                      t.diferencia_arqueo === 0 ? 'text-warning-emphasis' : t.diferencia_arqueo > 0 ? 'text-success' : 'text-danger'
+                                    }`}
+                                  >
+                                    {t.diferencia_arqueo > 0 ? '+' : ''}
+                                    {colones(t.diferencia_arqueo)}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="col-lg-7">
+                <div className="card shadow-sm h-100">
+                  <div className="card-header fw-bold bg-body-tertiary">
+                    <i className="bi bi-diagram-3-fill me-1" />Ventas por departamento
+                  </div>
+                  <div className="table-responsive">
+                    <table className="table table-sm align-middle mb-0">
+                      <thead>
+                        <tr>
+                          <th className="ps-3">Departamento</th>
+                          <th className="text-end">Unidades</th>
+                          <th className="text-end">Ventas</th>
+                          {usuario?.rol === 'admin' && <th className="text-end pe-3">Ganancia</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(resumen.ventas_por_departamento || []).length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="text-center text-muted small py-3">Sin ventas registradas.</td>
+                          </tr>
+                        ) : (
+                          resumen.ventas_por_departamento.map((d: any) => (
+                            <tr key={d.departamento}>
+                              <td className="ps-3 fw-semibold">{d.departamento}</td>
+                              <td className="text-end">{Number(d.unidades_vendidas || 0)}</td>
+                              <td className="text-end fw-bold">{colones(d.total_ventas)}</td>
+                              {usuario?.rol === 'admin' && (
+                                <td className="text-end pe-3 text-success fw-semibold">{colones(d.ganancia_bruta)}</td>
+                              )}
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="col-lg-5">
+                <div className="card shadow-sm h-100">
+                  <div className="card-header fw-bold bg-body-tertiary">
+                    <i className="bi bi-trophy-fill me-1" />Productos más vendidos
+                  </div>
+                  <ul className="list-group list-group-flush">
+                    {(resumen.top_productos || []).length === 0 ? (
+                      <li className="list-group-item text-center text-muted small py-3">Sin ventas registradas.</li>
+                    ) : (
+                      resumen.top_productos.map((p: any, idx: number) => (
+                        <li key={p.nombre} className="list-group-item d-flex justify-content-between align-items-center py-2">
+                          <span>
+                            <span className="badge bg-secondary me-2">{idx + 1}</span>
+                            <span className="fw-semibold">{p.nombre}</span>
+                          </span>
+                          <span className="text-end small">
+                            <strong>{Number(p.unidades)}</strong> u. · {colones(p.total)}
+                          </span>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              </div>
+
+              {resumen.anulaciones?.cantidad > 0 && (
+                <div className="col-12">
+                  <div className="card shadow-sm border-danger-subtle">
+                    <div className="card-header fw-bold bg-body-tertiary text-danger">
+                      <i className="bi bi-x-octagon-fill me-1" />Tickets anulados ({resumen.anulaciones.cantidad}) — {colones(resumen.anulaciones.monto_total_anulado)}
+                    </div>
+                    <div className="table-responsive">
+                      <table className="table table-sm align-middle mb-0">
+                        <tbody>
+                          {resumen.anulaciones.lista.map((v: any) => (
+                            <tr key={v.id}>
+                              <td className="ps-3 fw-bold" style={{ width: '90px' }}>#{v.numero_ticket}</td>
+                              <td className="small text-muted" style={{ width: '80px' }}>{horaCorta(v.fecha_anulacion || v.updated_at)}</td>
+                              <td className="small">
+                                {v.motivo_anulacion || 'Sin motivo'}
+                                {v.anulada_por?.nombre && <span className="text-muted"> — {v.anulada_por.nombre}</span>}
+                              </td>
+                              <td className="text-end pe-3 fw-bold text-danger">{colones(v.total)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Botón Contar Billetes y Cerrar Turno centrado abajo (en Corte de Cajero) */}
           {mostrarCierreDeCajero && (
             <div className="d-flex justify-content-center my-3 no-print">
@@ -745,13 +990,16 @@ export const ModuloCorteReportes: React.FC = () => {
                       </div>
                     </div>
 
-                    <button
+                    <BotonAccion
                       type="submit"
                       className="btn btn-danger btn-lg w-100 fw-bold"
-                      disabled={efectivoContadoFinal === null || cerrando}
+                      disabled={efectivoContadoFinal === null}
+                      cargando={cerrando}
+                      textoCargando="Cerrando y respaldando..."
+                      textoLento="Generando respaldo, no cierre la ventana..."
                     >
-                      {cerrando ? 'Cerrando y Respaldando...' : <><i className="bi bi-lock-fill me-1" />Cerrar Turno y Respaldar BD</>}
-                    </button>
+                      <i className="bi bi-lock-fill me-1" />Cerrar Turno y Respaldar BD
+                    </BotonAccion>
                   </div>
                 </div>
               </form>

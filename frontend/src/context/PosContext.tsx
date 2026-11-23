@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api, getAuthToken, setAuthToken } from '../api/client';
-import { Usuario, TurnoCaja, Producto, Departamento, Cliente, ItemCarrito } from '../types/models';
+import { api, EVENTO_SESION_EXPIRADA, getAuthToken, setAuthToken } from '../api/client';
+import { Usuario, TurnoCaja, Producto, Departamento, Cliente, ItemCarrito, StockActualizado } from '../types/models';
 
 interface PosContextType {
   usuario: Usuario | null;
@@ -19,6 +19,7 @@ interface PosContextType {
   reemplazarCarrito: (items: ItemCarrito[]) => void;
   limpiarCarrito: () => void;
   recargarCatalogos: () => Promise<void>;
+  aplicarStockActualizado: (lista?: StockActualizado[]) => void;
 }
 
 const PosContext = createContext<PosContextType | undefined>(undefined);
@@ -131,6 +132,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     document.documentElement.setAttribute('data-bs-theme', 'light');
   }, []);
 
+  // Si el servidor rechaza el token, volver a la pantalla de ingreso (el carrito se conserva)
+  useEffect(() => {
+    const alExpirar = () => setUsuarioState(null);
+    window.addEventListener(EVENTO_SESION_EXPIRADA, alExpirar);
+    return () => window.removeEventListener(EVENTO_SESION_EXPIRADA, alExpirar);
+  }, []);
+
   const setUsuario = (u: Usuario | null) => {
     if (!u) {
       setAuthToken(null);
@@ -155,6 +163,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
       console.error('Error cargando datos iniciales de PanPOS:', error);
     }
+  };
+
+  // Actualiza existencias en memoria con lo que devolvió el servidor tras una venta/anulación,
+  // sin volver a descargar todo el catálogo (cobro instantáneo).
+  const aplicarStockActualizado = (lista?: StockActualizado[]) => {
+    if (!lista || lista.length === 0) return;
+    const porId = new Map(lista.map((p) => [p.id, Number(p.stock_actual)]));
+    setProductos((prev) =>
+      prev.map((p) => (porId.has(p.id) ? { ...p, stock_actual: porId.get(p.id)! } : p))
+    );
   };
 
   useEffect(() => {
@@ -317,6 +335,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reemplazarCarrito,
         limpiarCarrito,
         recargarCatalogos,
+        aplicarStockActualizado,
       }}
     >
       {children}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
-import { api } from '../api/client';
+import { api, generarClaveIdempotencia, mensajeError, postConReintento } from '../api/client';
 import { Cliente } from '../types/models';
+import { BotonAccion } from './BotonAccion';
 
 export const ModuloClientes: React.FC = () => {
   const { clientes, usuario, turno, recargarCatalogos } = usePos();
@@ -25,12 +26,13 @@ export const ModuloClientes: React.FC = () => {
   const [errorModal, setErrorModal] = useState<string | null>(null);
   const [guardandoCliente, setGuardandoCliente] = useState(false);
   const [procesandoOp, setProcesandoOp] = useState(false);
+  const [claveOperacion, setClaveOperacion] = useState('');
 
   const cargarEfectivoCaja = async () => {
     if (!turno) return;
     try {
-      const res = await api.get(`/turnos/${turno.id}/resumen`);
-      setEfectivoDisponibleCaja(Number(res.data.gaveta_efectivo?.efectivo_esperado || 0));
+      const res = await api.get(`/turnos/${turno.id}/efectivo`);
+      setEfectivoDisponibleCaja(Number(res.data.efectivo_disponible || 0));
     } catch (e) {
       console.error(e);
     }
@@ -114,8 +116,10 @@ export const ModuloClientes: React.FC = () => {
     setMontoOp('');
     setConceptoOp('');
     setMetodoOp('efectivo');
-    await cargarEfectivoCaja();
+    setClaveOperacion(generarClaveIdempotencia(tipo));
     setModalOperacion(tipo);
+    // Se abre al instante; el efectivo disponible se actualiza en segundo plano
+    void cargarEfectivoCaja();
   };
 
   const registrarOperacion = async (e: React.FormEvent) => {
@@ -150,9 +154,9 @@ export const ModuloClientes: React.FC = () => {
 
     setProcesandoOp(true);
     try {
-      await api.post(`/clientes/${clienteSeleccionado.id}/operacion-credito`, {
+      await postConReintento(`/clientes/${clienteSeleccionado.id}/operacion-credito`, {
+        idempotency_key: claveOperacion || generarClaveIdempotencia(modalOperacion),
         turno_id: turno.id,
-        usuario_id: usuario.id,
         tipo: modalOperacion,
         metodo_pago: metodoOp,
         monto,
@@ -160,16 +164,11 @@ export const ModuloClientes: React.FC = () => {
       });
 
       setModalOperacion(null);
-      await recargarCatalogos();
-      await verEstadoCuenta(clienteSeleccionado);
-      await cargarEfectivoCaja();
       setAlerta({ tipo: 'success', texto: 'Operación registrada y saldo actualizado correctamente.' });
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.errors?.monto?.[0] ||
-        err.response?.data?.message ||
-        'No se pudo procesar la operación.';
-      setErrorModal(msg);
+      // Refrescar saldos en paralelo sin bloquear la pantalla
+      void Promise.all([recargarCatalogos(), verEstadoCuenta(clienteSeleccionado), cargarEfectivoCaja()]);
+    } catch (err) {
+      setErrorModal(mensajeError(err, 'No se pudo procesar la operación.'));
     } finally {
       setProcesandoOp(false);
     }
@@ -400,7 +399,7 @@ export const ModuloClientes: React.FC = () => {
                     ? `Registrar Abono — ${clienteSeleccionado.nombre}`
                     : `Prestar Efectivo de Caja — ${clienteSeleccionado.nombre}`}
                 </h5>
-                <button type="button" className="btn-close" onClick={() => setModalOperacion(null)} />
+                <button type="button" className="btn-close" disabled={procesandoOp} onClick={() => setModalOperacion(null)} />
               </div>
               <div className="modal-body">
                 {errorModal && <div className="alert alert-danger fw-semibold">{errorModal}</div>}
@@ -466,9 +465,15 @@ export const ModuloClientes: React.FC = () => {
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="submit" className="btn btn-success w-100 fw-bold btn-lg" disabled={procesandoOp}>
-                  {procesandoOp ? 'Registrando...' : 'Confirmar Operación'}
-                </button>
+                <BotonAccion
+                  type="submit"
+                  className="btn btn-success w-100 fw-bold btn-lg"
+                  cargando={procesandoOp}
+                  textoCargando="Registrando..."
+                  textoLento="El servidor está ocupado, reintentando..."
+                >
+                  Confirmar Operación
+                </BotonAccion>
               </div>
             </form>
           </div>

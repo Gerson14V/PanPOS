@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
 import { api } from '../api/client';
 import { Usuario } from '../types/models';
+import { imprimirTicket } from '../utils/ticket';
+import { sonidos } from '../utils/sonidos';
 
 type SeccionConfig =
   | 'menu'
@@ -594,9 +596,11 @@ export const ModuloConfiguracion: React.FC = () => {
 
             {seccionActiva === 'impresora' && (
               <div>
-                <h5 className="fw-bold mb-3"><i className="bi bi-printer me-1" />Impresora Térmica de Tickets (ESC/POS) <span className="badge bg-warning text-dark ms-1">Próximamente</span></h5>
-                <div className="alert alert-warning py-2 small fw-semibold">
-                  <i className="bi bi-hourglass-split me-1" />Módulo en preparación: guarda las preferencias de impresora, pero la impresión directa ESC/POS aún no está conectada.
+                <h5 className="fw-bold mb-3"><i className="bi bi-printer me-1" />Impresora Térmica de Tiquetes</h5>
+                <div className="alert alert-info py-2 small">
+                  <i className="bi bi-info-circle-fill me-1" />PanPOS imprime en la <strong>impresora predeterminada de Windows</strong>.
+                  Instale el controlador de su impresora térmica (58 u 80 mm) y márquela como predeterminada en
+                  <em> Configuración de Windows &gt; Impresoras</em>.
                 </div>
                 <div className="form-check form-switch mb-3">
                   <input
@@ -605,7 +609,21 @@ export const ModuloConfiguracion: React.FC = () => {
                     checked={(formConfig['impresion_escpos_activa'] ?? '0') === '1'}
                     onChange={(e) => setFormConfig({ ...formConfig, impresion_escpos_activa: e.target.checked ? '1' : '0' })}
                   />
-                  <label className="form-check-label fw-bold">Imprimir Tiquete Automáticamente al Cobrar</label>
+                  <label className="form-check-label fw-bold">Imprimir tiquete automáticamente al cobrar</label>
+                  <div className="form-text">Se puede cambiar en cada cobro con la casilla "Imprimir tiquete".</div>
+                </div>
+                <div className="form-check form-switch mb-3">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={(formConfig['impresion_silenciosa'] ?? '0') === '1'}
+                    onChange={(e) => setFormConfig({ ...formConfig, impresion_silenciosa: e.target.checked ? '1' : '0' })}
+                  />
+                  <label className="form-check-label fw-bold">Impresión silenciosa (sin ventana de diálogo)</label>
+                  <div className="form-text">
+                    El tiquete sale directo a la impresora predeterminada. Se aplica la próxima vez que se abra PanPOS desde
+                    el acceso directo del Escritorio.
+                  </div>
                 </div>
                 <div className="row g-3">
                   <div className="col-md-6">
@@ -620,6 +638,28 @@ export const ModuloConfiguracion: React.FC = () => {
                     </select>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-outline-primary fw-bold mt-3"
+                  onClick={() =>
+                    imprimirTicket(
+                      {
+                        numero_ticket: 0,
+                        total: 1500,
+                        created_at: new Date().toISOString(),
+                        usuario: { nombre: usuarioActual?.nombre || 'Cajero' },
+                        detalles: [
+                          { cantidad: 2, descripcion_producto: 'Pan de prueba', precio_unitario: 500, subtotal: 1000 },
+                          { cantidad: 1, descripcion_producto: 'Café de prueba', precio_unitario: 500, subtotal: 500 },
+                        ],
+                        pagos: [{ metodo_pago: 'efectivo', monto: 1500, monto_recibido: 2000, vuelto_entregado: 500 }],
+                      },
+                      formConfig
+                    )
+                  }
+                >
+                  <i className="bi bi-printer me-1" />Imprimir tiquete de prueba
+                </button>
               </div>
             )}
 
@@ -627,6 +667,24 @@ export const ModuloConfiguracion: React.FC = () => {
               <div>
                 <h5 className="fw-bold mb-3"><i className="bi bi-upc-scan me-1" />Lector de Códigos de Barras</h5>
                 <p className="text-muted">El campo de código enfoca automáticamente al abrir F1 Ventas y después de cada cobro. Compatible con cualquier lector láser/2D USB HID y códigos cortos manuales <code>01</code> a <code>99</code>.</p>
+                <div className="form-check form-switch mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={(formConfig['sonidos_caja'] ?? '1') === '1'}
+                    onChange={(e) => setFormConfig({ ...formConfig, sonidos_caja: e.target.checked ? '1' : '0' })}
+                  />
+                  <label className="form-check-label fw-bold">Sonidos de caja</label>
+                  <div className="form-text">Pitido corto al agregar un producto, tono de error si no existe o está agotado, y tono de cobro.</div>
+                </div>
+                <div className="d-flex gap-2">
+                  <button type="button" className="btn btn-sm btn-outline-success fw-bold" onClick={() => sonidos.agregado()}>
+                    <i className="bi bi-volume-up me-1" />Probar pitido
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-danger fw-bold" onClick={() => sonidos.error()}>
+                    <i className="bi bi-volume-up me-1" />Probar error
+                  </button>
+                </div>
               </div>
             )}
 
@@ -640,7 +698,12 @@ export const ModuloConfiguracion: React.FC = () => {
                     checked={(formConfig['abrir_cajon_automatico'] ?? '1') === '1'}
                     onChange={(e) => setFormConfig({ ...formConfig, abrir_cajon_automatico: e.target.checked ? '1' : '0' })}
                   />
-                  <label className="form-check-label fw-semibold">Enviar pulso de apertura de gaveta al cobrar en Efectivo</label>
+                  <label className="form-check-label fw-semibold">Abrir la gaveta al imprimir el tiquete</label>
+                </div>
+                <div className="alert alert-info py-2 small mb-0">
+                  <i className="bi bi-info-circle-fill me-1" />La gaveta conectada por RJ11 se abre desde el controlador de la impresora:
+                  en <em>Windows &gt; Impresoras &gt; (su impresora) &gt; Preferencias</em> active la opción
+                  <strong> "Abrir cajón / Cash drawer"</strong> al iniciar o terminar cada impresión.
                 </div>
               </div>
             )}

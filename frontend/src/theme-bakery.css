@@ -279,8 +279,218 @@ body {
 }
 
 
+/* Respuesta táctil inmediata al presionar cualquier botón */
+.btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* Botones de acciones pesadas mientras el servidor procesa */
+.btn-accion-pesada.is-cargando {
+  cursor: progress;
+  opacity: 0.9 !important;
+}
+
+.btn-accion-pesada .spinner-border-sm {
+  width: 1em;
+  height: 1em;
+  border-width: 0.15em;
+}
+
+/* Indicadores rápidos del corte */
+.panpos-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  height: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--bakery-soft-border);
+  border-radius: 10px;
+  background-color: var(--bakery-soft-cream);
+}
+
+.panpos-kpi-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--bakery-espresso-light);
+}
+
+.panpos-kpi-valor {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--bakery-text);
+}
+
+/* El corte anterior se atenúa mientras llega el nuevo, sin parpadear */
+.panpos-corte-hoja {
+  transition: opacity 0.15s ease;
+}
+
+.panpos-corte-hoja.is-actualizando {
+  opacity: 0.55;
+}
+
+/* ===================== Colores de marca en componentes Bootstrap ===================== */
+/* Bootstrap fija el azul al compilar: se reemplaza por el café de la panadería */
+.btn-outline-primary {
+  --bs-btn-color: var(--bakery-espresso);
+  --bs-btn-border-color: #b9a08a;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: var(--bakery-espresso);
+  --bs-btn-hover-border-color: var(--bakery-espresso);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--bakery-espresso-light);
+  --bs-btn-active-border-color: var(--bakery-espresso-light);
+  --bs-btn-disabled-color: #a38b78;
+  --bs-btn-disabled-border-color: #d6c8ba;
+  --bs-btn-focus-shadow-rgb: 92, 64, 51;
+}
+
+.btn-primary {
+  --bs-btn-disabled-bg: #8c7161;
+  --bs-btn-disabled-border-color: #8c7161;
+  --bs-btn-focus-shadow-rgb: 92, 64, 51;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #b48c6c;
+  box-shadow: 0 0 0 0.2rem rgba(140, 98, 57, 0.22);
+}
+
+.form-check-input:checked {
+  background-color: var(--bakery-espresso);
+  border-color: var(--bakery-espresso);
+}
+
+.form-check-input:focus {
+  border-color: #b48c6c;
+  box-shadow: 0 0 0 0.2rem rgba(140, 98, 57, 0.22);
+}
+
+.list-group-item.active {
+  background-color: var(--bakery-espresso);
+  border-color: var(--bakery-espresso);
+}
+
+.badge.bg-primary {
+  background-color: var(--bakery-espresso) !important;
+}
+
+kbd {
+  background-color: var(--bakery-espresso);
+  font-size: 0.75em;
+  padding: 0.1rem 0.35rem;
+}
+
+.modal-content {
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.modal-header.bg-success {
+  background-color: var(--bakery-green) !important;
+}
+
+/* Barras de desplazamiento discretas (tablas largas en corte y ventas del día) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #cdbba6;
+  border-radius: 8px;
+  border: 2px solid var(--bakery-cream-bg);
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+/* ===================== Caja (F1 Ventas) ===================== */
+/* Aviso flotante: no empuja la tabla de venta hacia abajo */
+.panpos-aviso-flotante {
+  position: fixed;
+  bottom: 10px;
+  left: 50%;
+  z-index: 1090;
+  width: min(760px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  animation: panpos-aparecer 0.18s ease-out;
+}
+
+@keyframes panpos-aparecer {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.panpos-precio-rapido {
+  padding: 0.05rem 0.55rem;
+  border-radius: 999px;
+  background-color: #ece2d4;
+  color: var(--bakery-espresso);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.panpos-sinpe-info {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #b8d3f0;
+  border-radius: 10px;
+  background-color: #eef6ff;
+  color: #1d4f7a;
+}
+
+.panpos-atajos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+}
+
+.panpos-atajos kbd + kbd {
+  margin-left: 2px;
+}
+
+/* Tabla del ticket: encabezado fijo y filas cómodas de leer */
+.card-watermark-panes .table-responsive {
+  max-height: 58vh;
+}
+
+.card-watermark-panes thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Franja de turno abierto desde otro día */
+.panpos-franja-turno {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 1rem;
+  border-bottom: 1px solid #ecd28a;
+  background-color: #fff6db;
+  color: #6b4e00;
+  font-size: 0.92rem;
+}
+
 /* Impresión limpia para Corte de Caja */
 @media print {
+  .panpos-corte-hoja.is-actualizando {
+    opacity: 1;
+  }
+
   .navbar,
   .no-print,
   .btn,

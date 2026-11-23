@@ -115,8 +115,7 @@ class ReporteExcelDiarioService
                 }
             } else {
                 $turnoAbierto = $turnosDelDia->where('estado', 'abierto')->last() ?? $ultimoTurno;
-                $resumenAbierto = $this->turnoCajaService->obtenerResumenTurno($turnoAbierto);
-                $efectivoEnCaja = (float) ($resumenAbierto['gaveta_efectivo']['efectivo_esperado'] ?? 0);
+                $efectivoEnCaja = $this->turnoCajaService->calcularEfectivoDisponible($turnoAbierto);
                 $bgEstado = '#e2e8f0';
                 $colorTexto = '#475569';
                 $textoEstado = 'TURNO ABIERTO (EN CURSO)';

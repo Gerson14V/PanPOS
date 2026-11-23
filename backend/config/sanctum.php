@@ -37,7 +37,8 @@ return [
     |
     */
 
-    'guard' => ['web'],
+    // PanPOS solo usa tokens Bearer: no consultar el guard de sesión web en cada petición.
+    'guard' => [],
 
     /*
     |--------------------------------------------------------------------------
@@ -51,6 +52,13 @@ return [
     */
 
     'expiration' => null,
+
+    /*
+    | PanPOS: no escribir last_used_at en cada petición. En Windows cada
+    | escritura obliga a SQLite a sincronizar el disco (synchronous=FULL),
+    | lo que volvía lentas incluso las consultas de solo lectura.
+    */
+    'last_used_at' => false,
 
     /*
     |--------------------------------------------------------------------------

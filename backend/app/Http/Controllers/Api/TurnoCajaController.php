@@ -73,6 +73,15 @@ class TurnoCajaController extends Controller
         return response()->json($this->turnoCajaService->obtenerResumenTurno($turno));
     }
 
+    // Consulta liviana para mostrar el efectivo en gaveta antes de una salida (F8)
+    public function efectivoDisponible(TurnoCaja $turno): JsonResponse
+    {
+        return response()->json([
+            'turno_id' => $turno->id,
+            'efectivo_disponible' => $this->turnoCajaService->calcularEfectivoDisponible($turno),
+        ]);
+    }
+
     public function registrarMovimiento(Request $request, TurnoCaja $turno): JsonResponse
     {
         $datos = $request->validate([
@@ -81,6 +90,7 @@ class TurnoCajaController extends Controller
             'metodo_pago' => 'required|in:efectivo,tarjeta,sinpe',
             'monto' => 'required|numeric|min:1',
             'concepto' => 'required|string|max:255',
+            'idempotency_key' => 'nullable|string|max:80',
         ]);
 
         $datos['turno_id'] = $turno->id;

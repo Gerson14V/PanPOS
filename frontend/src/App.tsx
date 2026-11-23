@@ -7,7 +7,9 @@ import { ModuloProductosInventario } from './components/ModuloProductosInventari
 import { ModuloProveedores } from './components/ModuloProveedores';
 import { ModuloCorteReportes } from './components/ModuloCorteReportes';
 import { ModuloConfiguracion } from './components/ModuloConfiguracion';
-import { api } from './api/client';
+import { api, mensajeError } from './api/client';
+import { BotonAccion } from './components/BotonAccion';
+import { fechaLocalISO } from './utils/fechaLocal';
 
 const MainLayout: React.FC = () => {
   const { usuario, setUsuario, turno, setTurno, limpiarCarrito, configuracion } = usePos();
@@ -19,8 +21,23 @@ const MainLayout: React.FC = () => {
   const [efectivoContadoSalir, setEfectivoContadoSalir] = useState('');
   const [observacionesSalir, setObservacionesSalir] = useState('');
   const [cerrandoCaja, setCerrandoCaja] = useState(false);
+  const [abriendoSalir, setAbriendoSalir] = useState(false);
+  const [errorSalir, setErrorSalir] = useState<string | null>(null);
 
   const clientesVisible = (configuracion['modulo_clientes_activo'] ?? '1') === '1';
+
+  // Turno abierto desde un día anterior: se recomienda cerrarlo para que el corte
+  // del día y los respaldos de cierre queden al día.
+  const turnoDeOtroDia =
+    !!turno?.fecha_apertura && fechaLocalISO(new Date(turno.fecha_apertura)) !== fechaLocalISO();
+  const diasTurnoAbierto = turnoDeOtroDia
+    ? Math.max(
+        1,
+        Math.round(
+          (Date.parse(fechaLocalISO()) - Date.parse(fechaLocalISO(new Date(turno!.fecha_apertura)))) / 86400000
+        )
+      )
+    : 0;
 
   useEffect(() => {
     const handleNavKeys = (e: KeyboardEvent) => {
@@ -51,26 +68,32 @@ const MainLayout: React.FC = () => {
   }, [clientesVisible, modalSalir, cerrandoCaja]);
 
   const abrirModalSalir = async () => {
+    if (abriendoSalir) return;
     if (!turno) {
       await api.post('/auth/logout').catch(() => {});
       setUsuario(null);
       return;
     }
+    setAbriendoSalir(true);
     try {
-      const res = await api.get(`/turnos/${turno.id}/resumen`);
-      setEfectivoEsperadoSalir(Number(res.data.gaveta_efectivo?.efectivo_esperado || 0));
+      // Consulta liviana: solo el efectivo esperado, no el corte completo
+      const res = await api.get(`/turnos/${turno.id}/efectivo`);
+      setEfectivoEsperadoSalir(Number(res.data.efectivo_disponible || 0));
       setEfectivoContadoSalir('');
       setObservacionesSalir('');
+      setErrorSalir(null);
       setModalSalir(true);
     } catch (e) {
-      console.error(e);
-      alert('No se pudo conectar con el servidor para obtener el resumen de caja.');
+      alert(mensajeError(e, 'No se pudo obtener el efectivo esperado en caja.'));
+    } finally {
+      setAbriendoSalir(false);
     }
   };
 
   const confirmarSalidaYCierre = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!turno) return;
+    if (!turno || cerrandoCaja) return;
+    setErrorSalir(null);
     setCerrandoCaja(true);
     try {
       const res = await api.post(
@@ -96,8 +119,8 @@ const MainLayout: React.FC = () => {
         ? `Excel diario actualizado en: ${res.data.excel_diario.ruta}`
         : 'Excel diario: No se pudo actualizar (cierre el archivo si está abierto)';
       alert(`Turno cerrado correctamente.\n${msgBackup}\n${msgExcel}`);
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Error al cerrar el turno.');
+    } catch (err) {
+      setErrorSalir(mensajeError(err, 'Error al cerrar el turno.'));
     } finally {
       setCerrandoCaja(false);
     }
@@ -182,17 +205,35 @@ const MainLayout: React.FC = () => {
                   {usuario.nombre}
                   <span className="panpos-nav-extra"> ({usuario.rol.toUpperCase()})</span>
                 </span>
-                <button
+                <BotonAccion
                   className="btn btn-sm btn-danger fw-bold px-3 py-1"
                   onClick={abrirModalSalir}
+                  cargando={abriendoSalir}
+                  textoCargando="Salir"
                 >
                   Salir
-                </button>
+                </BotonAccion>
               </>
             )}
           </div>
         </div>
       </nav>
+
+      {usuario && turnoDeOtroDia && moduloActivo !== 'corte' && (
+        <div className="panpos-franja-turno no-print">
+          <i className="bi bi-clock-history fs-5" />
+          <span>
+            El turno #{turno!.id} está abierto desde el{' '}
+            <strong>
+              {new Date(turno!.fecha_apertura).toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'short' })}
+            </strong>{' '}
+            ({diasTurnoAbierto === 1 ? 'ayer' : `hace ${diasTurnoAbierto} días`}). Se recomienda cerrar el turno al final de cada día.
+          </span>
+          <button className="btn btn-sm btn-warning fw-bold ms-auto" onClick={() => setModuloActivo('corte')}>
+            <i className="bi bi-scissors me-1" />Ir al corte
+          </button>
+        </div>
+      )}
 
       <main>
         {moduloActivo === 'ventas' && <ModuloVentas />}
@@ -213,10 +254,12 @@ const MainLayout: React.FC = () => {
                 <button
                   type="button"
                   className="btn-close btn-close-white"
+                  disabled={cerrandoCaja}
                   onClick={() => setModalSalir(false)}
                 />
               </div>
               <div className="modal-body p-4">
+                {errorSalir && <div className="alert alert-danger fw-semibold py-2">{errorSalir}</div>}
                 <div className="d-flex justify-content-between align-items-center p-3 mb-3 rounded bg-body-secondary">
                   <span className="fw-semibold">Efectivo esperado en caja:</span>
                   <strong className="fs-4 text-primary">
@@ -279,17 +322,20 @@ const MainLayout: React.FC = () => {
                 <button
                   type="button"
                   className="btn btn-outline-secondary"
+                  disabled={cerrandoCaja}
                   onClick={() => setModalSalir(false)}
                 >
                   Cancelar
                 </button>
-                <button
+                <BotonAccion
                   type="submit"
                   className="btn btn-danger fw-bold px-4"
-                  disabled={cerrandoCaja}
+                  cargando={cerrandoCaja}
+                  textoCargando="Cerrando y respaldando..."
+                  textoLento="Generando respaldo, no cierre la ventana..."
                 >
-                  {cerrandoCaja ? 'Cerrando y Respaldando...' : 'Confirmar Cierre y Salir'}
-                </button>
+                  Confirmar Cierre y Salir
+                </BotonAccion>
               </div>
             </form>
           </div>

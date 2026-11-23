@@ -1,0 +1,50 @@
+PANPOS - COMO INSTALAR ESTA ACTUALIZACION
+=========================================
+
+Esta actualizacion CONSERVA todos los datos: ventas, turnos, clientes,
+fiados, productos, usuarios y configuracion.
+
+ANTES DE EMPEZAR
+- Haga la actualizacion con la caja sin clientes (tarda 1 o 2 minutos).
+- No hace falta cerrar el turno. Si hay una venta a medio cobrar, terminela.
+
+PASOS
+1. Copie esta carpeta completa a la computadora de la caja (USB o red).
+2. Haga doble clic en "Actualizar_PanPOS.bat".
+3. Lea la informacion y escriba SI para continuar.
+   - Si Windows pide permiso de administrador, acepte.
+   - Si PanPOS no esta en C:\PanPOS, el actualizador le pedira la carpeta.
+4. Al terminar, PanPOS se abre solo.
+
+QUE HACE EL ACTUALIZADOR
+- Cierra PanPOS (servidor y su ventana).
+- Verifica la base de datos y cuenta los registros.
+- Guarda un respaldo COMPLETO en C:\PanPOS\respaldos_actualizacion\<fecha>\
+- Instala el codigo nuevo sin tocar la base de datos, el .env ni storage\.
+- Aplica los cambios de base de datos (solo agregan columnas e indices).
+- Vuelve a contar los registros: si falta uno solo, restaura todo
+  automaticamente a como estaba antes.
+
+SI ALGO SALE MAL
+El actualizador restaura la version anterior por si solo. Si aun asi
+necesita volver atras manualmente:
+  1. Ejecute Detener_PanPOS.bat
+  2. Copie C:\PanPOS\respaldos_actualizacion\<fecha>\app sobre C:\PanPOS\app
+  3. Abra PanPOS normalmente.
+El registro de cada actualizacion queda en
+C:\PanPOS\respaldos_actualizacion\actualizacion_<fecha>.log
+
+NOVEDADES DE ESTA VERSION
+- Cobros, entradas, salidas y corte mucho mas rapidos.
+- Si el servidor no responde, la operacion se reintenta sola sin duplicarse.
+- Tiquete de venta para impresora termica (58 u 80 mm) y reimpresion
+  desde "Ventas del Dia". Tiquete de corte de caja.
+  Configurelo en Configuracion > Impresora de Tickets.
+- Impresion silenciosa opcional (sin ventana de dialogo).
+- Sonidos de caja al agregar productos (Configuracion > Lector de Codigos).
+- Respaldo automatico de la base de datos una vez al dia.
+- Aviso cuando un turno lleva abierto desde un dia anterior.
+- Corte con tickets, ticket promedio, ventas por departamento,
+  productos mas vendidos, anulaciones y detalle por turno.
+- Numero SINPE en pantalla al cobrar y aviso de limite de credito.
+- Busqueda de productos con flechas del teclado.

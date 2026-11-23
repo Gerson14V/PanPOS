@@ -97,6 +97,7 @@ class ClienteController extends Controller
             'metodo_pago' => 'required|in:efectivo,tarjeta,sinpe',
             'monto' => 'required|numeric|min:1',
             'concepto' => 'required|string|max:255',
+            'idempotency_key' => 'nullable|string|max:80',
         ]);
 
         $datos['cliente_id'] = $cliente->id;

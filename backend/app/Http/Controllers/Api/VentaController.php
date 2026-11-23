@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Producto;
 use App\Models\Venta;
 use App\Services\VentaService;
 use Illuminate\Http\JsonResponse;
@@ -55,7 +56,8 @@ class VentaController extends Controller
         $datos['usuario_id'] = $request->user()->id;
 
         $venta = $this->ventaService->procesarVenta($datos);
-        return response()->json($venta, 201);
+
+        return response()->json($this->conStockActualizado($venta), 201);
     }
 
     public function anular(Request $request, Venta $venta): JsonResponse
@@ -70,6 +72,25 @@ class VentaController extends Controller
             $datos['motivo_anulacion']
         );
 
-        return response()->json($anulada);
+        return response()->json($this->conStockActualizado($anulada));
+    }
+
+    /**
+     * Agrega a la respuesta la existencia actual de los productos de la venta.
+     * Así la caja actualiza su catálogo local sin volver a descargar todos los
+     * productos, clientes y configuración después de cada cobro.
+     */
+    private function conStockActualizado(Venta $venta): array
+    {
+        $venta->loadMissing('detalles');
+        $ids = $venta->detalles->pluck('producto_id')->filter()->unique()->values();
+
+        $productos = $ids->isEmpty()
+            ? collect()
+            : Producto::whereIn('id', $ids)->get(['id', 'stock_actual'])
+                ->map(fn ($p) => ['id' => $p->id, 'stock_actual' => (int) $p->stock_actual])
+                ->values();
+
+        return array_merge($venta->toArray(), ['productos_actualizados' => $productos]);
     }
 }
