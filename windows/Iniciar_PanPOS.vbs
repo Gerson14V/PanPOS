@@ -68,6 +68,22 @@ Sub Artisan(argumentos)
     shell.Run """" & phpExe & """ -c """ & phpIni & """ """ & appDir & "\artisan"" " & argumentos, 0, True
 End Sub
 
+' Copia de seguridad simple de la base de datos (con el servidor detenido)
+Sub RespaldarBaseDatos()
+    Dim db, carpeta, sello, sufijo
+    On Error Resume Next
+    db = appDir & "\database\database.sqlite"
+    If Not fso.FileExists(db) Then Exit Sub
+    carpeta = base & "\respaldos_actualizacion"
+    If Not fso.FolderExists(carpeta) Then fso.CreateFolder carpeta
+    sello = Year(Now) & Right("0" & Month(Now), 2) & Right("0" & Day(Now), 2) & "_" & _
+            Right("0" & Hour(Now), 2) & Right("0" & Minute(Now), 2) & Right("0" & Second(Now), 2)
+    For Each sufijo In Array("", "-wal", "-shm")
+        If fso.FileExists(db & sufijo) Then fso.CopyFile db & sufijo, carpeta & "\antes_de_iniciar_" & sello & ".sqlite" & sufijo, True
+    Next
+    Err.Clear
+End Sub
+
 ' Las caches de configuracion/rutas guardan rutas absolutas: se regeneran si
 ' faltan o si PanPOS se instalo/movio a otra carpeta.
 Sub PrepararCaches()
@@ -81,6 +97,10 @@ Sub PrepararCaches()
     End If
 
     If (Not fso.FileExists(appDir & "\bootstrap\cache\config.php")) Or (LCase(rutaGuardada) <> LCase(base)) Then
+        ' Primer arranque tras instalar o actualizar: respaldo y migraciones pendientes
+        ' (las migraciones de PanPOS solo agregan columnas o indices)
+        RespaldarBaseDatos
+        Artisan "migrate --force --no-interaction"
         Artisan "optimize:clear"
         Artisan "optimize"
         Set f = fso.CreateTextFile(marcador, True)

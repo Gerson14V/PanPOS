@@ -157,8 +157,12 @@ function Detener-PanPOS {
 
 function Verificar-BaseDatos($etiqueta) {
     $r = Ejecutar-Php @((Join-Path $Origen 'verificar_bd.php'), $BaseDatos)
-    if ($r.Codigo -ne 0) { throw "Verificacion de base de datos ($etiqueta) fallo: $($r.Salida)" }
-    return ($r.Salida | ConvertFrom-Json)
+    $lineas = $r.Salida -split "`r?`n"
+    $lineaJson = $lineas | Where-Object { $_ -like 'PANPOS_JSON=*' } | Select-Object -Last 1
+    # Avisos de PHP (no impiden la actualizacion, pero se muestran para revisarlos)
+    $lineas | Where-Object { $_.Trim() -ne '' -and $_ -notlike 'PANPOS_JSON=*' } | ForEach-Object { Aviso "PHP: $_" }
+    if ($r.Codigo -ne 0 -or -not $lineaJson) { throw "Verificacion de base de datos ($etiqueta) fallo: $($r.Salida)" }
+    return ($lineaJson.Substring('PANPOS_JSON='.Length) | ConvertFrom-Json)
 }
 
 function Robocopy-Seguro($desde, $hacia, [string[]]$opciones) {

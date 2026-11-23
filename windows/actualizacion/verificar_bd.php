@@ -30,7 +30,9 @@ try {
         }
     }
 
-    echo json_encode(['integridad' => $integridad, 'conteos' => $conteos]);
+    // Línea marcada: el actualizador la busca entre cualquier aviso que PHP imprima
+    // al arrancar (p. ej. una extensión ya cargada), que no es JSON.
+    echo PHP_EOL . 'PANPOS_JSON=' . json_encode(['integridad' => $integridad, 'conteos' => $conteos]) . PHP_EOL;
     exit($integridad === 'ok' ? 0 : 1);
 } catch (Throwable $e) {
     fwrite(STDERR, $e->getMessage() . "\n");
