@@ -237,6 +237,11 @@ try {
         if (Test-Path $ruta) { Unblock-File -Path $ruta -ErrorAction SilentlyContinue }
     }
     Ok "Caches generadas y lanzador actualizado."
+    # OPcache es lo que mas acelera PanPOS: se confirma que PHP lo carga con la config nueva
+    # (comillas simples en el PHP: PowerShell 5.1 corrompe las dobles al pasarlas a php.exe)
+    $op = Ejecutar-Php @('-r', 'echo extension_loaded(''Zend OPcache'') ? ''OPCACHE_OK'' : ''OPCACHE_NO'';')
+    if ($op.Salida -match 'OPCACHE_OK') { Ok "Acelerador de PHP (OPcache): ACTIVO" }
+    else { Aviso "Acelerador de PHP (OPcache) NO se pudo activar: $($op.Salida)" }
 
     # -----------------------------------------------------------------
     Titulo "7/7 Verificando que no se perdio ningun dato..."
