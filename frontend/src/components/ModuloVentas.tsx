@@ -670,6 +670,8 @@ export const ModuloVentas: React.FC = () => {
                                 if (e.key === '-' || e.key === 'e' || e.key === 'E') e.preventDefault();
                               }}
                               onChange={(e) => {
+                                // Campo vacío mientras se escribe otra cantidad: no se borra la línea
+                                if (e.target.value === '') return;
                                 const val = Math.max(0, parseInt(e.target.value, 10) || 0);
                                 const err = cambiarCantidadCarrito(item.uid, val);
                                 if (err) setMensaje({ tipo: 'warning', texto: err });

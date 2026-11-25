@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Departamento;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class DepartamentoController extends Controller
@@ -20,10 +21,18 @@ class DepartamentoController extends Controller
     public function store(Request $request): JsonResponse
     {
         $datos = $request->validate([
-            'nombre' => 'required|string|max:100|unique:departamentos,nombre',
+            'nombre' => ['required', 'string', 'max:100', Rule::unique('departamentos', 'nombre')->where('activo', true)],
         ]);
 
-        $departamento = Departamento::create($datos);
+        // Un proveedor eliminado que tuvo productos queda inactivo con su nombre:
+        // si se vuelve a crear, se reactiva en lugar de chocar con el nombre único.
+        $departamento = Departamento::where('nombre', $datos['nombre'])->first();
+        if ($departamento) {
+            $departamento->update(['activo' => true]);
+        } else {
+            $departamento = Departamento::create($datos);
+        }
+
         return response()->json($departamento, 201);
     }
 

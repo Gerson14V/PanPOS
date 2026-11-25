@@ -279,4 +279,79 @@ class PanPosCoreTest extends TestCase
             ->assertJsonPath('turno_activo', null)
             ->assertJsonPath('ultimo_cierre.id', $turnoId);
     }
+
+    public function test_eliminar_cajero_con_solo_movimientos_lo_desactiva_sin_error(): void
+    {
+        [, $turnoId] = $this->prepararCaja();
+        $cajera = Usuario::create(['nombre' => 'Cajera Tarde', 'username' => 'tarde', 'password' => '1234', 'rol' => 'cajero', 'activo' => true]);
+        $tokenCajera = $cajera->createToken('panpos-terminal')->plainTextToken;
+
+        // La cajera solo registró una entrada en el turno del administrador
+        \App\Models\MovimientoCaja::create([
+            'turno_id' => $turnoId, 'usuario_id' => $cajera->id, 'tipo' => 'entrada',
+            'metodo_pago' => 'efectivo', 'monto' => 500, 'concepto' => 'Monedas',
+        ]);
+
+        $this->deleteJson("/api/usuarios/{$cajera->id}")->assertStatus(200);
+        $this->assertFalse((bool) $cajera->fresh()->activo);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+        $this->assertNotNull($tokenCajera);
+    }
+
+    public function test_cambiar_contrasena_cierra_las_otras_sesiones_del_usuario(): void
+    {
+        $this->prepararCaja();
+        $cajera = Usuario::create(['nombre' => 'Cajera Noche', 'username' => 'noche', 'password' => '1234', 'rol' => 'cajero', 'activo' => true]);
+        $cajera->createToken('panpos-terminal');
+
+        $this->putJson("/api/usuarios/{$cajera->id}", ['password' => 'nueva123'])->assertStatus(200);
+        $this->assertSame(0, $cajera->tokens()->count());
+    }
+
+    public function test_proveedor_eliminado_se_puede_volver_a_crear(): void
+    {
+        [$prod] = $this->prepararCaja();
+        $dep = $prod->departamento;
+
+        // Con productos en el historial el proveedor solo se desactiva
+        $prod->update(['activo' => false]);
+        $this->deleteJson("/api/departamentos/{$dep->id}")->assertStatus(200);
+        $this->assertFalse((bool) $dep->fresh()->activo);
+
+        $this->postJson('/api/departamentos', ['nombre' => $dep->nombre])
+            ->assertStatus(201)
+            ->assertJsonPath('id', $dep->id)
+            ->assertJsonPath('activo', true);
+
+        // Un proveedor activo con el mismo nombre sí se rechaza, en español
+        $this->postJson('/api/departamentos', ['nombre' => $dep->nombre])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.nombre.0', 'Ya existe un registro con ese nombre.');
+    }
+
+    public function test_errores_de_validacion_en_espanol(): void
+    {
+        [$prod] = $this->prepararCaja();
+
+        $this->postJson('/api/productos', [
+            'departamento_id' => $prod->departamento_id,
+            'codigo_barras' => $prod->codigo_barras,
+            'nombre' => 'Repetido',
+            'precio_compra' => 0,
+            'precio_venta' => 'abc',
+            'controlar_stock' => false,
+        ])->assertStatus(422)
+            ->assertJsonPath('errors.codigo_barras.0', 'Ya existe un registro con ese código de barras.')
+            ->assertJsonPath('errors.precio_venta.0', 'El campo precio de venta debe ser un número.');
+    }
+
+    public function test_respaldo_manual_fallido_explica_el_problema(): void
+    {
+        $this->prepararCaja();
+        $this->mock(BackupService::class)->shouldReceive('generarRespaldo')->andThrow(new \RuntimeException('disco lleno'));
+
+        $this->postJson('/api/sistema/backup')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('respaldo');
+    }
 }

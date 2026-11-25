@@ -179,6 +179,13 @@ class UsuarioConfigController extends Controller
         }
 
         $usuario->update($datos);
+
+        // Contraseña nueva o usuario desactivado: se cierran sus sesiones abiertas
+        // (menos la de quien está haciendo el cambio, si se edita a sí mismo).
+        if (isset($datos['password']) || (isset($datos['activo']) && !$datos['activo'])) {
+            $usuario->tokens()->where('id', '!=', $request->user()->currentAccessToken()?->id ?? 0)->delete();
+        }
+
         return response()->json($usuario);
     }
 
@@ -203,7 +210,9 @@ class UsuarioConfigController extends Controller
         $usuario->tokens()->delete();
 
         $tieneHistorial = DB::table('turnos_caja')->where('usuario_id', $usuario->id)->exists()
-            || DB::table('ventas')->where('usuario_id', $usuario->id)->exists();
+            || DB::table('ventas')->where('usuario_id', $usuario->id)->orWhere('anulada_por_usuario_id', $usuario->id)->exists()
+            || DB::table('movimientos_caja')->where('usuario_id', $usuario->id)->exists()
+            || DB::table('movimientos_inventario')->where('usuario_id', $usuario->id)->exists();
 
         if ($tieneHistorial) {
             $usuario->update([

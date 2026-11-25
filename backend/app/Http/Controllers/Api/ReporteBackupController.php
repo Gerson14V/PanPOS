@@ -12,6 +12,7 @@ use App\Services\TurnoCajaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
 class ReporteBackupController extends Controller
@@ -249,6 +250,12 @@ class ReporteBackupController extends Controller
 
     public function ejecutarBackupManual(): JsonResponse
     {
-        return response()->json($this->backupService->generarRespaldo('manual'));
+        try {
+            return response()->json($this->backupService->generarRespaldo('manual'));
+        } catch (\Throwable $e) {
+            throw ValidationException::withMessages([
+                'respaldo' => 'No se pudo crear el respaldo. Revise que la carpeta de respaldos exista y tenga permiso de escritura. Detalle: ' . $e->getMessage(),
+            ]);
+        }
     }
 }

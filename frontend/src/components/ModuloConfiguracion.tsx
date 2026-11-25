@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
-import { api } from '../api/client';
+import { api, mensajeError } from '../api/client';
 import { Usuario } from '../types/models';
 import { imprimirTicket } from '../utils/ticket';
 import { sonidos } from '../utils/sonidos';
@@ -65,8 +65,8 @@ export const ModuloConfiguracion: React.FC = () => {
       await api.put('/configuracion', { configuraciones: formConfig });
       await recargarCatalogos();
       setMensaje({ tipo: 'success', texto: 'Cambios guardados en la configuración de PanPOS.' });
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'No se pudieron guardar los cambios de configuración.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudieron guardar los cambios de configuración.') });
     } finally {
       setGuardandoConfig(false);
     }
@@ -162,8 +162,8 @@ export const ModuloConfiguracion: React.FC = () => {
         tipo: 'success',
         texto: `Respaldo creado en: ${res.data.ruta_local} ${res.data.copiado_usb ? '(+ Copiado a USB)' : ''}`,
       });
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'No se pudo ejecutar el respaldo manual.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudo ejecutar el respaldo manual.') });
     }
   };
 

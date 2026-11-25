@@ -223,7 +223,10 @@ export const LoginTurnoModal: React.FC = () => {
                     <button
                       type="button"
                       className="btn btn-outline-secondary px-3"
-                      onClick={() => setUsuario(null)}
+                      onClick={() => {
+                        api.post('/auth/logout').catch(() => {});
+                        setUsuario(null);
+                      }}
                     >
                       Volver
                     </button>
