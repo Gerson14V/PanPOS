@@ -441,6 +441,10 @@ export const ModuloVentas: React.FC = () => {
       });
       inputScanRef.current?.focus();
     } catch (err) {
+      // El ticket en espera ya no existe (p. ej. se anuló al cerrar el turno): se cobra como venta nueva
+      if ((err as { response?: { data?: { errors?: Record<string, unknown> } } })?.response?.data?.errors?.venta_en_espera_id) {
+        setVentaEnEsperaId(null);
+      }
       setMensaje({ tipo: 'danger', texto: mensajeError(err, 'Error al procesar la venta.') });
     } finally {
       setProcesandoVenta(false);

@@ -222,6 +222,8 @@ export const ModuloCorteReportes: React.FC = () => {
         : 'Excel diario: No se pudo actualizar (cierre el archivo si está abierto)';
       alert(`Turno #${turno.id} cerrado con éxito.\n${msgBackup}\n${msgExcel}`);
       limpiarCarrito();
+      // Igual que "Salir": la sesión también se cierra en el servidor
+      await api.post('/auth/logout').catch(() => {});
       setTurno(null);
       setUsuario(null);
     } catch (err) {

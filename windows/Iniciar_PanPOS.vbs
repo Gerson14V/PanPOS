@@ -61,6 +61,22 @@ Sub DetenerServidores()
     WScript.Sleep 500
 End Sub
 
+' Edge/Chrome usando el perfil propio de PanPOS (browser_profile)
+Function NavegadorPanPOSAbierto()
+    Dim wmi, lista, p, abierto
+    abierto = False
+    On Error Resume Next
+    Set wmi = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
+    Set lista = wmi.ExecQuery("SELECT CommandLine FROM Win32_Process WHERE Name = 'msedge.exe' OR Name = 'chrome.exe'")
+    For Each p In lista
+        If Not IsNull(p.CommandLine) Then
+            If InStr(1, p.CommandLine, base & "\browser_profile", vbTextCompare) > 0 Then abierto = True
+        End If
+    Next
+    Err.Clear
+    NavegadorPanPOSAbierto = abierto
+End Function
+
 ' Ejecuta artisan oculto y espera a que termine. PHP corre desde la carpeta
 ' php\ porque php-panpos.ini carga las extensiones con la ruta relativa ext\
 Sub Artisan(argumentos)
@@ -220,6 +236,13 @@ perfil = base & "\browser_profile"
 extras = " --disable-background-timer-throttling --disable-renderer-backgrounding"
 ' Activado desde Configuracion > Impresora: imprime tiquetes sin dialogo
 If fso.FileExists(base & "\impresion_silenciosa.activar") Then extras = extras & " --kiosk-printing"
+
+' Ya hay una ventana de PanPOS: se trae al frente en vez de abrir otra.
+' Dos ventanas a la vez quedan con estados distintos (una cierra el turno y la otra no se entera).
+If NavegadorPanPOSAbierto() Then
+    If shell.AppActivate("PanPOS") Then WScript.Quit 0
+End If
+
 navegadores = Array( _
     "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", _
     "C:\Program Files\Microsoft\Edge\Application\msedge.exe", _

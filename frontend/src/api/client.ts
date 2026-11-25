@@ -32,6 +32,8 @@ api.interceptors.request.use((config) => {
 
 /** Evento global: la sesión ya no es válida (p. ej. se inició sesión en otra ventana). */
 export const EVENTO_SESION_EXPIRADA = 'panpos:sesion-expirada';
+/** Evento global: el turno cambió en el servidor (cerrado o abierto desde otra ventana). */
+export const EVENTO_TURNO_DESACTUALIZADO = 'panpos:turno-desactualizado';
 
 api.interceptors.response.use(
   (response) => response,
@@ -39,6 +41,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !String(error.config?.url || '').includes('/auth/login')) {
       setAuthToken(null);
       window.dispatchEvent(new Event(EVENTO_SESION_EXPIRADA));
+    }
+    const errores = error.response?.status === 422 ? error.response.data?.errors : null;
+    if (errores && ('turno' in errores || 'turno_id' in errores)) {
+      window.dispatchEvent(new Event(EVENTO_TURNO_DESACTUALIZADO));
     }
     return Promise.reject(error);
   }

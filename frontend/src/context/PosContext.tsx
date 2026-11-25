@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api, EVENTO_SESION_EXPIRADA, getAuthToken, setAuthToken } from '../api/client';
+import { api, EVENTO_SESION_EXPIRADA, EVENTO_TURNO_DESACTUALIZADO, getAuthToken, setAuthToken } from '../api/client';
 import { Usuario, TurnoCaja, Producto, Departamento, Cliente, ItemCarrito, StockActualizado } from '../types/models';
 
 interface PosContextType {
@@ -135,9 +135,26 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Si el servidor rechaza el token, volver a la pantalla de ingreso (el carrito se conserva)
   useEffect(() => {
     const alExpirar = () => setUsuarioState(null);
+    // Turno cerrado/abierto en otra ventana: se toma el estado real del servidor
+    const alCambiarTurno = () => {
+      api
+        .get('/turnos/activo')
+        .then((res) => setTurno(res.data.turno_activo))
+        .catch(() => {});
+    };
     window.addEventListener(EVENTO_SESION_EXPIRADA, alExpirar);
-    return () => window.removeEventListener(EVENTO_SESION_EXPIRADA, alExpirar);
+    window.addEventListener(EVENTO_TURNO_DESACTUALIZADO, alCambiarTurno);
+    return () => {
+      window.removeEventListener(EVENTO_SESION_EXPIRADA, alExpirar);
+      window.removeEventListener(EVENTO_TURNO_DESACTUALIZADO, alCambiarTurno);
+    };
   }, []);
+
+  // Respaldo diario en segundo plano al ingresar (el servidor lo hace una vez por día)
+  useEffect(() => {
+    if (!usuario?.id) return;
+    api.post('/sistema/respaldo-diario', {}, { timeout: 120000 }).catch(() => {});
+  }, [usuario?.id]);
 
   const setUsuario = (u: Usuario | null) => {
     if (!u) {

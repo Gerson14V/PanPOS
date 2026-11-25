@@ -26,6 +26,15 @@ const MainLayout: React.FC = () => {
 
   const clientesVisible = (configuracion['modulo_clientes_activo'] ?? '1') === '1';
 
+  // Al cambiar la sesión (cierre de turno, sesión vencida, nuevo ingreso) se vuelve a Ventas:
+  // los otros módulos consultan la API al montarse y sin sesión fallarían sin permiso.
+  const [usuarioPrevio, setUsuarioPrevio] = useState(usuario?.id);
+  if (usuarioPrevio !== usuario?.id) {
+    setUsuarioPrevio(usuario?.id);
+    setModuloActivo('ventas');
+  }
+  const moduloVisible = usuario ? moduloActivo : 'ventas';
+
   // Turno abierto desde un día anterior: se recomienda cerrarlo para que el corte
   // del día y los respaldos de cierre queden al día.
   const turnoDeOtroDia =
@@ -236,12 +245,12 @@ const MainLayout: React.FC = () => {
       )}
 
       <main>
-        {moduloActivo === 'ventas' && <ModuloVentas />}
-        {moduloActivo === 'clientes' && <ModuloClientes />}
-        {moduloActivo === 'productos_inventario' && <ModuloProductosInventario />}
-        {moduloActivo === 'proveedores' && <ModuloProveedores />}
-        {moduloActivo === 'corte' && <ModuloCorteReportes />}
-        {moduloActivo === 'config' && <ModuloConfiguracion />}
+        {moduloVisible === 'ventas' && <ModuloVentas />}
+        {moduloVisible === 'clientes' && <ModuloClientes />}
+        {moduloVisible === 'productos_inventario' && <ModuloProductosInventario />}
+        {moduloVisible === 'proveedores' && <ModuloProveedores />}
+        {moduloVisible === 'corte' && <ModuloCorteReportes />}
+        {moduloVisible === 'config' && <ModuloConfiguracion />}
       </main>
 
       {/* Modal del botón "Salir" (Pregunta cuánto dinero hay en caja y cierra el turno) */}

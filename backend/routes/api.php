@@ -12,13 +12,14 @@ use Illuminate\Support\Facades\Route;
 
 // Rutas públicas mínimas (pantalla de login)
 Route::get('sistema/publico', [UsuarioConfigController::class, 'estadoPublico']);
-Route::post('auth/login', [UsuarioConfigController::class, 'login'])->middleware('throttle:5,1');
+Route::post('auth/login', [UsuarioConfigController::class, 'login'])->middleware('throttle:10,1');
 
 // Rutas protegidas para operadores autenticados (Admin y Cajero)
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('auth/me', [UsuarioConfigController::class, 'me']);
     Route::post('auth/logout', [UsuarioConfigController::class, 'logout']);
     Route::get('configuracion', [UsuarioConfigController::class, 'obtenerConfiguracion']);
+    Route::post('sistema/respaldo-diario', [UsuarioConfigController::class, 'respaldoDiario']);
 
     // Departamentos / Proveedores
     Route::apiResource('departamentos', DepartamentoController::class)->only(['index', 'store', 'update', 'destroy']);

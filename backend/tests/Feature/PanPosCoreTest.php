@@ -217,7 +217,7 @@ class PanPosCoreTest extends TestCase
         $this->assertEquals(-100.0, (float) $cierre->json('turno.diferencia_arqueo'));
     }
 
-    public function test_primer_ingreso_del_dia_genera_un_solo_respaldo_automatico(): void
+    public function test_respaldo_diario_va_aparte_del_login_y_se_hace_una_vez(): void
     {
         Usuario::create([
             'nombre' => 'Cajera Mañana',
@@ -231,13 +231,52 @@ class PanPosCoreTest extends TestCase
         $this->partialMock(BackupService::class)->shouldReceive('generarRespaldo')->once()
             ->andReturn(['archivo' => 'panpos_diario_prueba.sqlite', 'ruta_local' => '/tmp/x', 'copiado_usb' => false, 'fecha' => now()->toDateTimeString()]);
 
-        $this->postJson('/api/auth/login', ['username' => 'manana', 'password' => '1234'])
+        // El login ya no respalda: responde de inmediato
+        $token = $this->postJson('/api/auth/login', ['username' => 'manana', 'password' => '1234'])
+            ->assertStatus(200)
+            ->assertJsonMissingPath('respaldo_diario')
+            ->json('token');
+
+        $this->withToken($token)->postJson('/api/sistema/respaldo-diario')
             ->assertStatus(200)
             ->assertJsonPath('respaldo_diario', 'panpos_diario_prueba.sqlite');
 
-        // Segundo ingreso el mismo día: no repite el respaldo
-        $this->postJson('/api/auth/login', ['username' => 'manana', 'password' => '1234'])
+        // Segunda vez el mismo día: no repite el respaldo
+        $this->withToken($token)->postJson('/api/sistema/respaldo-diario')
             ->assertStatus(200)
             ->assertJsonPath('respaldo_diario', null);
+    }
+
+    public function test_turno_cerrado_o_duplicado_responde_con_errores_de_turno(): void
+    {
+        [$prod, $turnoId] = $this->prepararCaja();
+
+        // Abrir otro turno con uno abierto: error en "turno" (la caja refresca su estado)
+        $this->postJson('/api/turnos/abrir', ['monto_inicial' => 0])
+            ->assertStatus(422)->assertJsonValidationErrors('turno');
+
+        $this->mock(BackupService::class)->shouldReceive('generarRespaldo')->andReturn(['archivo' => 'x', 'ruta_local' => '/tmp/x', 'copiado_usb' => false, 'fecha' => '']);
+        $this->mock(ReporteExcelDiarioService::class)->shouldReceive('actualizarArchivoMaestro')->andReturn(['guardado' => true, 'ruta' => '/tmp/x.xls', 'archivo' => 'x.xls', 'html' => '']);
+        $this->postJson("/api/turnos/{$turnoId}/cerrar", ['total_efectivo_contado' => 5000])->assertStatus(200);
+
+        // Otra ventana que no se enteró del cierre
+        $this->postJson("/api/turnos/{$turnoId}/cerrar", ['total_efectivo_contado' => 5000])
+            ->assertStatus(422)->assertJsonValidationErrors('turno');
+        $this->postJson('/api/ventas', [
+            'idempotency_key' => 'venta-turno-cerrado',
+            'turno_id' => $turnoId,
+            'estado' => 'completada',
+            'items' => [['producto_id' => $prod->id, 'cantidad' => 1]],
+            'pagos' => [['metodo_pago' => 'efectivo', 'monto' => 700]],
+        ])->assertStatus(422)->assertJsonValidationErrors('turno_id');
+        $this->postJson("/api/turnos/{$turnoId}/movimientos", [
+            'tipo' => 'entrada', 'metodo_pago' => 'efectivo', 'monto' => 100, 'concepto' => 'x',
+        ])->assertStatus(422)->assertJsonValidationErrors('turno');
+
+        // La pantalla de ingreso sabe cuándo fue el último cierre
+        $this->getJson('/api/sistema/publico')
+            ->assertStatus(200)
+            ->assertJsonPath('turno_activo', null)
+            ->assertJsonPath('ultimo_cierre.id', $turnoId);
     }
 }

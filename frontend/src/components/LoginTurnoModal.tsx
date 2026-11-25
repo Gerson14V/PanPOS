@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
 import { api, setAuthToken, mensajeError } from '../api/client';
 import { BotonAccion } from './BotonAccion';
+import { fechaLocalISO } from '../utils/fechaLocal';
 
 export const LoginTurnoModal: React.FC = () => {
   const { usuario, setUsuario, turno, setTurno, configuracion, carrito, recargarCatalogos } = usePos();
@@ -10,12 +11,28 @@ export const LoginTurnoModal: React.FC = () => {
   const [montoInicial, setMontoInicial] = useState('10000');
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
+  const [ultimoCierre, setUltimoCierre] = useState<{ id: number; fecha_cierre: string } | null>(null);
 
   useEffect(() => {
     if (configuracion['fondo_inicial_sugerido']) {
       setMontoInicial(configuracion['fondo_inicial_sugerido']);
     }
   }, [configuracion]);
+
+  // En la pantalla de apertura: saber cuándo se cerró el último turno
+  const mostrandoApertura = !!usuario && !turno;
+  useEffect(() => {
+    if (!mostrandoApertura) return;
+    api
+      .get('/sistema/publico')
+      .then((res) => setUltimoCierre(res.data.ultimo_cierre || null))
+      .catch(() => setUltimoCierre(null));
+  }, [mostrandoApertura]);
+
+  const cierreDeHoy =
+    ultimoCierre?.fecha_cierre && fechaLocalISO(new Date(ultimoCierre.fecha_cierre)) === fechaLocalISO()
+      ? new Date(ultimoCierre.fecha_cierre)
+      : null;
 
   // Si ya ingresó credenciales y ya hay turno activo (nuevo o recuperado tras apagón), entra directo al POS
   if (usuario && turno) return null;
@@ -25,7 +42,8 @@ export const LoginTurnoModal: React.FC = () => {
     setError('');
     setCargando(true);
     try {
-      const res = await api.post('/auth/login', { username, password });
+      // La primera petición tras encender la PC puede tardar (PHP y antivirus en frío)
+      const res = await api.post('/auth/login', { username, password }, { timeout: 60000 });
       setAuthToken(res.data.token);
       await recargarCatalogos();
       setUsuario(res.data.usuario);
@@ -40,6 +58,15 @@ export const LoginTurnoModal: React.FC = () => {
   const handleAbrirTurno = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!usuario) return;
+    // Evita abrir sin querer un turno nuevo justo después de cerrar el del día
+    if (
+      cierreDeHoy &&
+      !window.confirm(
+        `El turno #${ultimoCierre!.id} ya se cerró hoy a las ${cierreDeHoy.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.\n\n¿Seguro que desea ABRIR UN TURNO NUEVO?`
+      )
+    ) {
+      return;
+    }
     setError('');
     setCargando(true);
     try {

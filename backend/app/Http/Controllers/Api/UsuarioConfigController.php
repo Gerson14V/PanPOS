@@ -70,9 +70,15 @@ class UsuarioConfigController extends Controller
             ->latest('fecha_apertura')
             ->first();
 
+        $ultimoCierre = TurnoCaja::select('id', 'fecha_cierre')
+            ->where('estado', 'cerrado')
+            ->latest('fecha_cierre')
+            ->first();
+
         return response()->json([
             'configuracion' => $config,
             'turno_activo' => $turno,
+            'ultimo_cierre' => $ultimoCierre,
         ]);
     }
 
@@ -101,14 +107,19 @@ class UsuarioConfigController extends Controller
         $usuario->tokens()->delete();
         $token = $usuario->createToken('panpos-terminal')->plainTextToken;
 
-        // Primer ingreso del día: respaldo automático de la base de datos
-        $respaldoDiario = app(BackupService::class)->respaldoDiarioSiFalta();
-
         return response()->json([
             'usuario' => $usuario,
             'token' => $token,
-            'respaldo_diario' => $respaldoDiario ? $respaldoDiario['archivo'] : null,
         ]);
+    }
+
+    // Respaldo automático una vez al día. Va en su propia petición (la caja la envía
+    // después de ingresar) para que el inicio de sesión nunca espere la copia de la BD.
+    public function respaldoDiario(BackupService $backupService): JsonResponse
+    {
+        $respaldo = $backupService->respaldoDiarioSiFalta();
+
+        return response()->json(['respaldo_diario' => $respaldo['archivo'] ?? null]);
     }
 
     public function me(Request $request): JsonResponse
