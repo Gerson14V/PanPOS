@@ -31,16 +31,21 @@ class TurnoCajaService
         });
     }
 
-    public function calcularEfectivoDisponible(TurnoCaja $turno): float
+    // Efectivo que debería haber en gaveta para el turno (ahora, o en un momento dado con $hasta)
+    public function calcularEfectivoDisponible(TurnoCaja $turno, ?Carbon $hasta = null): float
     {
         $ventasEfectivo = (float) DB::table('pagos_venta')
             ->join('ventas', 'pagos_venta.venta_id', '=', 'ventas.id')
             ->where('ventas.turno_id', $turno->id)
             ->where('ventas.estado', 'completada')
             ->where('pagos_venta.metodo_pago', 'efectivo')
+            ->when($hasta, fn ($q) => $q->where('ventas.created_at', '<', $hasta))
             ->sum('pagos_venta.monto');
 
-        $movimientos = $turno->movimientosCaja()->where('metodo_pago', 'efectivo')->get();
+        $movimientos = $turno->movimientosCaja()
+            ->where('metodo_pago', 'efectivo')
+            ->when($hasta, fn ($q) => $q->where('created_at', '<', $hasta))
+            ->get();
 
         $entradas = (float) $movimientos->where('tipo', 'entrada')->sum('monto');
         $abonos = (float) $movimientos->where('tipo', 'abono_cliente')->sum('monto');
@@ -134,7 +139,7 @@ class TurnoCajaService
 
     public function obtenerResumenTurno(TurnoCaja $turno): array
     {
-        $bloques = $this->construirBloquesResumen([$turno->id], (float) $turno->monto_inicial);
+        $bloques = $this->construirBloquesResumen(['turnos' => [$turno->id]], (float) $turno->monto_inicial);
 
         return array_merge([
             'es_corte_dia' => false,
@@ -143,42 +148,54 @@ class TurnoCajaService
         ], $bloques);
     }
 
-    // Lista únicamente fechas únicas que tienen al menos un turno registrado
+    // Días con ventas o turnos (por fecha real de venta), con su cantidad de tickets
     public function obtenerFechasConTurnos(): array
     {
-        $turnos = TurnoCaja::with('usuario:id,nombre')
-            ->orderByDesc('fecha_apertura')
-            ->get();
+        // Últimos ~4 meses: la lista se mantiene rápida aunque la base crezca
+        $desde = now()->subDays(120)->startOfDay();
 
-        $porFecha = $turnos->groupBy(function ($t) {
-            return Carbon::parse($t->fecha_apertura)->format('Y-m-d');
-        });
+        $ticketsPorDia = DB::table('ventas')
+            ->where('estado', 'completada')
+            ->where('created_at', '>=', $desde)
+            ->selectRaw('substr(created_at, 1, 10) as fecha, COUNT(*) as tickets')
+            ->groupBy('fecha')
+            ->pluck('tickets', 'fecha');
 
-        $resultado = [];
-        foreach ($porFecha as $fecha => $grupo) {
-            $cajeros = $grupo->pluck('usuario.nombre')->filter()->unique()->values()->all();
-            $tieneAbierto = $grupo->contains('estado', 'abierto');
+        $diasConTurno = TurnoCaja::where('fecha_apertura', '>=', $desde)
+            ->selectRaw('substr(fecha_apertura, 1, 10) as fecha')->distinct()->pluck('fecha');
+        $abierto = TurnoCaja::where('estado', 'abierto')->latest('fecha_apertura')->first();
+        $hoy = now()->toDateString();
 
-            $resultado[] = [
-                'fecha' => $fecha,
-                'cantidad_turnos' => $grupo->count(),
-                'cajeros' => $cajeros,
-                'estado' => $tieneAbierto ? 'abierto' : 'cerrado',
-            ];
-        }
+        return $ticketsPorDia->keys()->merge($diasConTurno)->unique()->sortDesc()->take(90)
+            ->map(function (string $fecha) use ($ticketsPorDia, $abierto, $hoy) {
+                $dentroDelTurnoAbierto = $abierto && $fecha >= $abierto->fecha_apertura->toDateString();
 
-        return array_slice($resultado, 0, 90);
+                return [
+                    'fecha' => $fecha,
+                    'cantidad_tickets' => (int) ($ticketsPorDia[$fecha] ?? 0),
+                    'estado' => !$dentroDelTurnoAbierto ? 'cerrado' : ($fecha === $hoy ? 'abierto' : 'sin_cierre'),
+                ];
+            })->values()->all();
     }
 
-    // Consolida todos los turnos de una fecha específica en un solo Corte del Día
+    /**
+     * Corte del Día: ventas y movimientos con fecha de ese día (aunque el turno
+     * se haya abierto un día anterior), más los turnos que estuvieron abiertos.
+     */
     public function obtenerResumenDia(string $fecha): array
     {
+        $desde = Carbon::parse($fecha)->startOfDay();
+        $hasta = $desde->copy()->endOfDay();
+
         $turnos = TurnoCaja::with('usuario:id,nombre')
-            ->whereDate('fecha_apertura', $fecha)
-            ->orderBy('fecha_apertura', 'asc')
+            ->where('fecha_apertura', '<=', $hasta)
+            ->where(fn ($q) => $q->whereNull('fecha_cierre')->orWhere('fecha_cierre', '>=', $desde))
+            ->orderBy('fecha_apertura')
             ->get();
 
-        if ($turnos->isEmpty()) {
+        $hayVentas = DB::table('ventas')->whereBetween('created_at', [$desde, $hasta])->exists();
+
+        if ($desde->isFuture() || ($turnos->isEmpty() && !$hayVentas)) {
             return [
                 'es_corte_dia' => true,
                 'sin_datos' => true,
@@ -188,14 +205,22 @@ class TurnoCajaService
             ];
         }
 
-        $bloques = $this->construirBloquesResumen(
-            $turnos->pluck('id')->all(),
-            (float) $turnos->sum('monto_inicial')
-        );
+        // Efectivo en gaveta al comenzar el día: fondo de los turnos abiertos ese día
+        // + lo que traían los turnos que venían abiertos de días anteriores.
+        $efectivoInicial = (float) $turnos->sum(fn (TurnoCaja $t) => $t->fecha_apertura->lt($desde)
+            ? $this->calcularEfectivoDisponible($t, $desde)
+            : (float) $t->monto_inicial);
 
-        $tieneAbierto = $turnos->contains('estado', 'abierto');
-        $turnosCerrados = $turnos->where('estado', 'cerrado');
+        $bloques = $this->construirBloquesResumen(['desde' => $desde, 'hasta' => $hasta], $efectivoInicial);
+
+        $siguenAbiertos = $turnos->filter(fn (TurnoCaja $t) => $t->estado === 'abierto' || $t->fecha_cierre->gt($hasta));
+        $cerradosEseDia = $turnos->filter(fn (TurnoCaja $t) => $t->estado === 'cerrado' && $t->fecha_cierre->between($desde, $hasta));
         $cajeros = $turnos->pluck('usuario.nombre')->filter()->unique()->values()->all();
+
+        $estado = 'cerrado';
+        if ($siguenAbiertos->isNotEmpty()) {
+            $estado = $desde->isToday() ? 'abierto' : 'sin_cierre';
+        }
 
         return array_merge([
             'es_corte_dia' => true,
@@ -205,14 +230,14 @@ class TurnoCajaService
             'cajeros' => $cajeros,
             'turno' => [
                 'id' => null,
-                'estado' => $tieneAbierto ? 'abierto' : 'cerrado',
-                'fecha_apertura' => $turnos->first()->fecha_apertura,
-                'fecha_cierre' => $tieneAbierto ? null : $turnos->last()->fecha_cierre,
-                'total_efectivo_contado' => $turnosCerrados->isNotEmpty()
-                    ? round((float) $turnosCerrados->sum('total_efectivo_contado'), 2)
+                'estado' => $estado,
+                'fecha_apertura' => $turnos->isNotEmpty() ? $turnos->first()->fecha_apertura->max($desde) : $desde,
+                'fecha_cierre' => $siguenAbiertos->isEmpty() ? $cerradosEseDia->last()?->fecha_cierre : null,
+                'total_efectivo_contado' => $cerradosEseDia->isNotEmpty()
+                    ? round((float) $cerradosEseDia->sum('total_efectivo_contado'), 2)
                     : null,
-                'diferencia_arqueo' => $turnosCerrados->isNotEmpty()
-                    ? round((float) $turnosCerrados->sum('diferencia_arqueo'), 2)
+                'diferencia_arqueo' => $cerradosEseDia->isNotEmpty()
+                    ? round((float) $cerradosEseDia->sum('diferencia_arqueo'), 2)
                     : null,
                 'usuario' => ['nombre' => implode(', ', $cajeros)],
             ],
@@ -221,6 +246,7 @@ class TurnoCajaService
                 'id' => $t->id,
                 'cajero' => $t->usuario?->nombre,
                 'estado' => $t->estado,
+                'viene_de_otro_dia' => $t->fecha_apertura->lt($desde),
                 'fecha_apertura' => $t->fecha_apertura,
                 'fecha_cierre' => $t->fecha_cierre,
                 'monto_inicial' => (float) $t->monto_inicial,
@@ -231,15 +257,23 @@ class TurnoCajaService
         ], $bloques);
     }
 
+    // Limita una consulta a uno o varios turnos, o a un rango de fechas (corte del día)
+    private function filtrarAlcance($consulta, string $tabla, array $alcance)
+    {
+        return isset($alcance['turnos'])
+            ? $consulta->whereIn("{$tabla}.turno_id", $alcance['turnos'])
+            : $consulta->whereBetween("{$tabla}.created_at", [$alcance['desde'], $alcance['hasta']]);
+    }
+
     /**
      * Calcula las secciones comunes del corte (pagos, gaveta, departamentos,
-     * anulaciones, estadísticas y productos más vendidos) para uno o varios turnos.
+     * anulaciones, estadísticas y productos más vendidos) para turnos o para un día.
      */
-    private function construirBloquesResumen(array $turnosIds, float $montoInicial): array
+    private function construirBloquesResumen(array $alcance, float $montoInicial): array
     {
         $pagosPorMetodo = DB::table('pagos_venta')
             ->join('ventas', 'pagos_venta.venta_id', '=', 'ventas.id')
-            ->whereIn('ventas.turno_id', $turnosIds)
+            ->tap(fn ($q) => $this->filtrarAlcance($q, 'ventas', $alcance))
             ->where('ventas.estado', 'completada')
             ->selectRaw('pagos_venta.metodo_pago, SUM(pagos_venta.monto) as total')
             ->groupBy('pagos_venta.metodo_pago')
@@ -251,7 +285,7 @@ class TurnoCajaService
         $ventasCredito = (float) ($pagosPorMetodo['credito'] ?? 0);
 
         $movimientos = MovimientoCaja::with(['cliente:id,nombre', 'usuario:id,nombre'])
-            ->whereIn('turno_id', $turnosIds)
+            ->tap(fn ($q) => $this->filtrarAlcance($q, 'movimientos_caja', $alcance))
             ->latest('created_at')
             ->get();
 
@@ -272,7 +306,7 @@ class TurnoCajaService
             ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
             ->leftJoin('productos', 'detalle_ventas.producto_id', '=', 'productos.id')
             ->leftJoin('departamentos', 'productos.departamento_id', '=', 'departamentos.id')
-            ->whereIn('ventas.turno_id', $turnosIds)
+            ->tap(fn ($q) => $this->filtrarAlcance($q, 'ventas', $alcance))
             ->where('ventas.estado', 'completada')
             ->selectRaw("
                 COALESCE(departamentos.nombre, 'Artículo Común') as departamento,
@@ -287,7 +321,7 @@ class TurnoCajaService
 
         $topProductos = DB::table('detalle_ventas')
             ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
-            ->whereIn('ventas.turno_id', $turnosIds)
+            ->tap(fn ($q) => $this->filtrarAlcance($q, 'ventas', $alcance))
             ->where('ventas.estado', 'completada')
             ->selectRaw('detalle_ventas.descripcion_producto as nombre, SUM(detalle_ventas.cantidad) as unidades, SUM(detalle_ventas.subtotal) as total')
             ->groupBy('detalle_ventas.descripcion_producto')
@@ -297,7 +331,7 @@ class TurnoCajaService
             ->get();
 
         $estadisticas = DB::table('ventas')
-            ->whereIn('turno_id', $turnosIds)
+            ->tap(fn ($q) => $this->filtrarAlcance($q, 'ventas', $alcance))
             ->where('estado', 'completada')
             ->selectRaw('COUNT(id) as tickets, COALESCE(SUM(total), 0) as total, MIN(created_at) as primera, MAX(created_at) as ultima')
             ->first();
@@ -306,7 +340,7 @@ class TurnoCajaService
         $ventasTotales = round($ventasEfectivo + $ventasTarjeta + $ventasSinpe + $ventasCredito, 2);
 
         $ventasAnuladas = Venta::with(['anuladaPor:id,nombre', 'detalles'])
-            ->whereIn('turno_id', $turnosIds)
+            ->tap(fn ($q) => $this->filtrarAlcance($q, 'ventas', $alcance))
             ->where('estado', 'anulada')
             ->latest('fecha_anulacion')
             ->get();

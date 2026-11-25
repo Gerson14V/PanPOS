@@ -5,7 +5,8 @@ import { PagoItem, Producto, RespuestaVenta } from '../types/models';
 import { BotonAccion } from './BotonAccion';
 import { Aviso, AvisoFlotante } from './AvisoFlotante';
 import { sonidos, sonidosActivos } from '../utils/sonidos';
-import { imprimirTicket } from '../utils/ticket';
+import { imprimirTicket, numeroTicket } from '../utils/ticket';
+import { fechaLocalISO } from '../utils/fechaLocal';
 
 export const ModuloVentas: React.FC = () => {
   const {
@@ -301,7 +302,8 @@ export const ModuloVentas: React.FC = () => {
     if (!turno || cargandoLista) return;
     setCargandoLista('ventas_dia');
     try {
-      const res = await api.get(`/ventas?turno_id=${turno.id}`);
+      // Por fecha real: si el turno viene abierto de ayer, no se mezclan los tickets de ayer
+      const res = await api.get(`/ventas?fecha=${fechaLocalISO()}`);
       setVentasDia(res.data);
       setFiltroVentasDia('todas');
       setModalVentasDia(true);
@@ -326,10 +328,10 @@ export const ModuloVentas: React.FC = () => {
     }
   };
 
-  const eliminarTicketDelDia = async (ventaId: number, numeroTicket: number) => {
+  const eliminarTicketDelDia = async (ventaId: number, numero: number) => {
     if (!usuario || anulandoId !== null) return;
     const motivo = window.prompt(
-      `¿Desea eliminar/anular el Ticket #${numeroTicket}? (Se devolverá el inventario y se revertirá el cobro).\nMotivo:`,
+      `¿Desea eliminar/anular el Ticket #${numero}? (Se devolverá el inventario y se revertirá el cobro).\nMotivo:`,
       'Cancelado en caja'
     );
     if (!motivo || !motivo.trim()) return;
@@ -348,7 +350,7 @@ export const ModuloVentas: React.FC = () => {
             : v
         )
       );
-      setMensaje({ tipo: 'warning', texto: `Ticket #${numeroTicket} eliminado/anulado y existencias restauradas.` });
+      setMensaje({ tipo: 'warning', texto: `Ticket #${numero} eliminado/anulado y existencias restauradas.` });
     } catch (err) {
       setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudo anular el ticket.') });
     } finally {
@@ -423,10 +425,10 @@ export const ModuloVentas: React.FC = () => {
         tipo: 'success',
         texto:
           estado === 'completada'
-            ? `Venta #${ventaRegistrada.numero_ticket} registrada.${
+            ? `Venta #${numeroTicket(ventaRegistrada)} registrada.${
                 vuelto > 0 ? ` Vuelto a entregar: ₡${vuelto.toLocaleString('es-CR')}` : ''
               }`
-            : `Ticket #${ventaRegistrada.numero_ticket} guardado en espera (F6).`,
+            : `Ticket #${numeroTicket(ventaRegistrada)} guardado en espera (F6).`,
         accion:
           estado === 'completada' && !imprimirAhora
             ? {
@@ -828,7 +830,8 @@ export const ModuloVentas: React.FC = () => {
             <div className="modal-content">
               <div className="modal-header bg-primary text-white">
                 <h5 className="modal-title fw-bold">
-                  <i className="bi bi-receipt me-1" />Ventas del Día — Turno #{turno?.id} ({ventasDia.length} tickets)
+                  <i className="bi bi-receipt me-1" />Ventas del Día —{' '}
+                  {new Date().toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'short' })} ({ventasDia.length} tickets)
                 </h5>
                 <button type="button" className="btn-close btn-close-white" onClick={() => setModalVentasDia(false)} />
               </div>
@@ -885,7 +888,7 @@ export const ModuloVentas: React.FC = () => {
                     ) : (
                       ventasDiaFiltradas.map((v) => (
                         <tr key={v.id} className={v.estado === 'anulada' ? 'table-danger' : ''}>
-                          <td className="fw-bold">#{v.numero_ticket}</td>
+                          <td className="fw-bold">#{numeroTicket(v)}</td>
                           <td className="small">{new Date(v.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                           <td className="small">{v.usuario?.nombre || '—'}</td>
                           <td>{v.cliente?.nombre || 'Contado'}</td>
@@ -932,13 +935,14 @@ export const ModuloVentas: React.FC = () => {
                                 <i className="bi bi-printer" />
                               </button>
                             )}
-                            {v.estado !== 'anulada' && (
+                            {/* Solo se anulan tickets del turno abierto (el servidor lo exige) */}
+                            {v.estado !== 'anulada' && v.turno_id === turno?.id && (
                               <BotonAccion
                                 className="btn btn-sm btn-outline-danger fw-bold"
                                 disabled={anulandoId !== null && anulandoId !== v.id}
                                 cargando={anulandoId === v.id}
                                 textoCargando="Anulando..."
-                                onClick={() => eliminarTicketDelDia(v.id, v.numero_ticket)}
+                                onClick={() => eliminarTicketDelDia(v.id, numeroTicket(v))}
                               >
                                 <i className="bi bi-trash me-1" />Eliminar
                               </BotonAccion>
@@ -1267,7 +1271,7 @@ export const ModuloVentas: React.FC = () => {
                         onClick={() => recuperarTicketEspera(v)}
                       >
                         <div>
-                          <strong>Ticket #{v.numero_ticket}</strong> ({v.detalles.length} líneas)
+                          <strong>Ticket #{numeroTicket(v)}</strong> ({v.detalles.length} líneas)
                         </div>
                         <span className="fw-bold text-primary">₡{Number(v.total).toLocaleString()}</span>
                       </button>

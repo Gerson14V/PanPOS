@@ -116,7 +116,11 @@ export const LoginTurnoModal: React.FC = () => {
                   <div>
                     <span className="badge bg-warning text-dark mb-1">TURNO EN CURSO DETECTADO</span>
                     <div className="small opacity-90">
-                      Turno #{turno.id} abierto a las {new Date(turno.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+                      Turno #{turno.id} abierto{' '}
+                      {fechaLocalISO(new Date(turno.fecha_apertura)) === fechaLocalISO()
+                        ? 'hoy'
+                        : `el ${new Date(turno.fecha_apertura).toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'short' })}`}{' '}
+                      a las {new Date(turno.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
                       Al iniciar sesión continuará exactamente donde quedó.
                     </div>
                     {carrito.length > 0 && (

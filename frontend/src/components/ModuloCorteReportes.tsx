@@ -3,7 +3,7 @@ import { usePos } from '../context/PosContext';
 import { api, mensajeError } from '../api/client';
 import { fechaLocalISO } from '../utils/fechaLocal';
 import { BotonAccion } from './BotonAccion';
-import { imprimirCorte } from '../utils/ticket';
+import { imprimirCorte, numeroTicket } from '../utils/ticket';
 
 const DENOMINACIONES_CR = [
   { valor: 20000, label: '₡20,000', tipo: 'Billete' },
@@ -25,9 +25,8 @@ type TipoPeriodo = 'un_dia' | 'semana' | 'mes' | 'intervalo';
 
 interface FechaDisponible {
   fecha: string;
-  cantidad_turnos: number;
-  cajeros: string[];
-  estado: 'abierto' | 'cerrado';
+  cantidad_tickets: number;
+  estado: 'abierto' | 'cerrado' | 'sin_cierre';
 }
 
 const colones = (n: unknown): string =>
@@ -35,6 +34,21 @@ const colones = (n: unknown): string =>
 
 const horaCorta = (fecha?: string | null): string =>
   fecha ? new Date(fecha).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+
+// Hora, con la fecha delante si no es de hoy (turnos que cruzan varios días)
+const momento = (fecha?: string | null): string => {
+  if (!fecha) return '—';
+  const d = new Date(fecha);
+  return fechaLocalISO(d) === fechaLocalISO()
+    ? horaCorta(fecha)
+    : `${d.toLocaleDateString('es-CR', { day: 'numeric', month: 'short' })} ${horaCorta(fecha)}`;
+};
+
+// Días calendario que lleva abierto un turno (0 = abierto hoy)
+const diasAbierto = (fechaApertura?: string | null): number =>
+  fechaApertura ? Math.round((Date.parse(fechaLocalISO()) - Date.parse(fechaLocalISO(new Date(fechaApertura)))) / 86400000) : 0;
+
+const ETIQUETA_ESTADO_DIA: Record<string, string> = { abierto: 'EN CURSO', cerrado: 'CERRADO', sin_cierre: 'SIN CIERRE' };
 
 const formatearFechaCorta = (ymd: string): string => {
   if (!ymd) return '';
@@ -406,23 +420,35 @@ export const ModuloCorteReportes: React.FC = () => {
                     setMostrarConteo(false);
                   }}
                 >
-                  <option value="">-- Días con cortes registrados --</option>
+                  <option value="">-- Días con ventas --</option>
                   {fechasDisponibles.map((f) => (
                     <option key={f.fecha} value={f.fecha}>
-                      {formatearFechaCorta(f.fecha)} — {f.cantidad_turnos}{' '}
-                      {f.cantidad_turnos === 1 ? 'turno' : 'turnos'} ({f.estado === 'abierto' ? 'EN CURSO' : 'CERRADO'})
+                      {formatearFechaCorta(f.fecha)} — {f.cantidad_tickets} {f.cantidad_tickets === 1 ? 'ticket' : 'tickets'} (
+                      {ETIQUETA_ESTADO_DIA[f.estado] || f.estado})
                     </option>
                   ))}
                 </select>
               </div>
 
               {resumen && !resumen.sin_datos && (
-                <span className={`badge fs-6 ${resumen.turno.estado === 'abierto' ? 'bg-success' : 'bg-secondary'}`}>
+                <span
+                  className={`badge fs-6 ${
+                    resumen.turno.estado === 'abierto'
+                      ? 'bg-success'
+                      : resumen.turno.estado === 'sin_cierre'
+                      ? 'bg-warning text-dark'
+                      : 'bg-secondary'
+                  }`}
+                >
                   {resumen.es_corte_dia
                     ? resumen.turno.estado === 'abierto'
                       ? 'DÍA EN CURSO'
+                      : resumen.turno.estado === 'sin_cierre'
+                      ? 'DÍA SIN CIERRE (EL TURNO SIGUIÓ)'
                       : 'DÍA CERRADO'
-                    : 'TURNO EN CURSO'}
+                    : resumen.turno.estado === 'abierto'
+                    ? 'TURNO EN CURSO'
+                    : 'TURNO CERRADO'}
                 </span>
               )}
             </div>
@@ -440,15 +466,7 @@ export const ModuloCorteReportes: React.FC = () => {
           {resumen?.sin_datos && (
             <div className="card shadow-sm p-5 text-center text-muted mb-3">
               <h5 className="fw-bold mb-1">Sin movimientos el {formatearFechaCorta(resumen.fecha)}</h5>
-              <p className="mb-0 small">No se abrieron turnos en esta fecha.</p>
-              {turno && turno.fecha_apertura && fechaLocalISO(new Date(turno.fecha_apertura)) !== resumen.fecha && (
-                <div className="alert alert-warning d-inline-block mx-auto mt-3 mb-0 py-2 small fw-semibold">
-                  <i className="bi bi-exclamation-triangle-fill me-1" />
-                  El turno #{turno.id} sigue abierto desde el{' '}
-                  {new Date(turno.fecha_apertura).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' })}: sus ventas
-                  aparecen en <strong>Corte de Cajero</strong> y en el corte de ese día.
-                </div>
-              )}
+              <p className="mb-0 small">No hubo ventas ni turnos abiertos en esta fecha.</p>
             </div>
           )}
 
@@ -463,7 +481,7 @@ export const ModuloCorteReportes: React.FC = () => {
                         Corte del Día — {formatearFechaCorta(resumen.fecha)}
                       </h5>
                       <small className="text-muted">
-                        Todos los turnos del día ({resumen.cantidad_turnos}{' '}
+                        Ventas y movimientos de este día ({resumen.cantidad_turnos}{' '}
                         {resumen.cantidad_turnos === 1 ? 'turno' : 'turnos'}) • Cajeros:{' '}
                         <strong>{resumen.cajeros?.join(', ') || 'N/A'}</strong> • De{' '}
                         {new Date(resumen.turno.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
@@ -476,21 +494,22 @@ export const ModuloCorteReportes: React.FC = () => {
                   ) : (
                     <>
                       <h5 className="fw-bold mb-0 text-primary">
-                        Corte de Cajero: {resumen.turno.usuario?.nombre} del{' '}
-                        {new Date(resumen.turno.fecha_apertura).toLocaleDateString('es-CR', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
+                        Corte de Cajero: {resumen.turno.usuario?.nombre} — Turno #{resumen.turno.id}
                       </h5>
                       <small className="text-muted">
-                        Turno #{resumen.turno.id} • De{' '}
-                        {new Date(resumen.turno.fecha_apertura).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
-                        a{' '}
-                        {resumen.turno.fecha_cierre
-                          ? new Date(resumen.turno.fecha_cierre).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                          : 'la hora actual (Turno Actual)'}
+                        Desde el{' '}
+                        {new Date(resumen.turno.fecha_apertura).toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'short' })}{' '}
+                        a las {horaCorta(resumen.turno.fecha_apertura)} hasta{' '}
+                        {resumen.turno.fecha_cierre ? momento(resumen.turno.fecha_cierre) : 'la hora actual (turno en curso)'}
                       </small>
+                      {!resumen.turno.fecha_cierre && diasAbierto(resumen.turno.fecha_apertura) > 0 && (
+                        <div className="alert alert-warning py-2 px-3 mt-2 mb-0 small fw-semibold no-print">
+                          <i className="bi bi-exclamation-triangle-fill me-1" />
+                          Este turno lleva {diasAbierto(resumen.turno.fecha_apertura) + 1} días abierto: el corte de cajero suma
+                          todos esos días. Para ver solo un día use <strong>Corte del Día</strong>. Cierre el turno al terminar la
+                          jornada con el botón de abajo.
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -545,7 +564,7 @@ export const ModuloCorteReportes: React.FC = () => {
                       <div className="panpos-kpi">
                         <span className="panpos-kpi-label"><i className="bi bi-clock me-1" />Primera / última venta</span>
                         <span className="panpos-kpi-valor">
-                          {horaCorta(resumen.estadisticas.primera_venta)} – {horaCorta(resumen.estadisticas.ultima_venta)}
+                          {momento(resumen.estadisticas.primera_venta)} – {momento(resumen.estadisticas.ultima_venta)}
                         </span>
                       </div>
                     </div>
@@ -565,7 +584,7 @@ export const ModuloCorteReportes: React.FC = () => {
                     <table className="table table-sm table-borderless mb-4">
                       <tbody>
                         <tr>
-                          <td className="ps-3">Fondo de caja</td>
+                          <td className="ps-3">{resumen.es_corte_dia ? 'Efectivo al iniciar el día' : 'Fondo de caja'}</td>
                           <td className="text-end fw-semibold">₡{Number(resumen.gaveta_efectivo.monto_inicial).toLocaleString('es-CR', { minimumFractionDigits: 2 })}</td>
                         </tr>
                         <tr className="text-success">
@@ -731,7 +750,7 @@ export const ModuloCorteReportes: React.FC = () => {
                               <td className="ps-3 fw-bold">#{t.id}</td>
                               <td>{t.cajero || '—'}</td>
                               <td className="small">
-                                {horaCorta(t.fecha_apertura)} – {t.estado === 'abierto' ? 'en curso' : horaCorta(t.fecha_cierre)}
+                                {momento(t.fecha_apertura)} – {t.estado === 'abierto' ? 'en curso' : momento(t.fecha_cierre)}
                               </td>
                               <td className="text-end">{colones(t.monto_inicial)}</td>
                               <td className="text-end">{t.total_efectivo_esperado === null ? '—' : colones(t.total_efectivo_esperado)}</td>
@@ -833,7 +852,7 @@ export const ModuloCorteReportes: React.FC = () => {
                         <tbody>
                           {resumen.anulaciones.lista.map((v: any) => (
                             <tr key={v.id}>
-                              <td className="ps-3 fw-bold" style={{ width: '90px' }}>#{v.numero_ticket}</td>
+                              <td className="ps-3 fw-bold" style={{ width: '90px' }}>#{numeroTicket(v)}</td>
                               <td className="small text-muted" style={{ width: '80px' }}>{horaCorta(v.fecha_anulacion || v.updated_at)}</td>
                               <td className="small">
                                 {v.motivo_anulacion || 'Sin motivo'}
@@ -856,7 +875,11 @@ export const ModuloCorteReportes: React.FC = () => {
             <div className="d-flex justify-content-center my-3 no-print">
               <button
                 className={`btn btn-lg px-5 fw-bold shadow-sm ${mostrarConteo ? 'btn-secondary' : 'btn-danger'}`}
-                onClick={() => setMostrarConteo(!mostrarConteo)}
+                onClick={() => {
+                  // Al abrir el conteo se recalcula el efectivo esperado con las últimas ventas
+                  if (!mostrarConteo) recargarCorteActual();
+                  setMostrarConteo(!mostrarConteo);
+                }}
               >
                 {mostrarConteo ? <><i className="bi bi-chevron-up me-1" />Ocultar Billetes y Monedas</> : <><i className="bi bi-cash-stack me-1" />Contar Billetes y Monedas / Cerrar Turno</>}
               </button>

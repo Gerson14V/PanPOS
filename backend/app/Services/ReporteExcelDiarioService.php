@@ -69,67 +69,58 @@ class ReporteExcelDiarioService
 
     public function generarHtmlMaestro(): string
     {
-        $turnos = TurnoCaja::orderBy('fecha_apertura', 'asc')->get();
+        // Una fila por día calendario con ventas o cierres (un turno abierto varios días
+        // reparte sus ventas en cada día, en lugar de sumarlas todas el día que abrió).
+        $ventasPorDia = Venta::where('estado', 'completada')
+            ->selectRaw('substr(created_at, 1, 10) as fecha, SUM(total) as total')
+            ->groupBy('fecha')
+            ->pluck('total', 'fecha');
 
-        // Una sola consulta agrupada por turno_id (evita consultas N+1)
-        $ventasPorTurno = Venta::where('estado', 'completada')
-            ->selectRaw('turno_id, SUM(total) as total')
-            ->groupBy('turno_id')
-            ->pluck('total', 'turno_id');
+        $cierresPorDia = TurnoCaja::where('estado', 'cerrado')
+            ->orderBy('fecha_cierre')
+            ->get()
+            ->groupBy(fn (TurnoCaja $t) => $t->fecha_cierre->toDateString());
 
-        $porFecha = $turnos->groupBy(function ($t) {
-            return Carbon::parse($t->fecha_apertura)->format('Y-m-d');
-        });
+        $abierto = TurnoCaja::where('estado', 'abierto')->latest('fecha_apertura')->first();
+        $hoy = now()->toDateString();
+
+        $fechas = $ventasPorDia->keys()->merge($cierresPorDia->keys())->unique()->sort()->values();
 
         $filasHtml = '';
         $granTotalVentas = 0.0;
 
-        foreach ($porFecha as $fechaYmd => $turnosDelDia) {
-            $ventasDia = 0.0;
-            foreach ($turnosDelDia as $t) {
-                $ventasDia += (float) ($ventasPorTurno[$t->id] ?? 0);
-            }
+        foreach ($fechas as $fechaYmd) {
+            $ventasDia = (float) ($ventasPorDia[$fechaYmd] ?? 0);
             $granTotalVentas += $ventasDia;
+            $cierres = $cierresPorDia->get($fechaYmd);
 
-            $tieneAbierto = $turnosDelDia->contains('estado', 'abierto');
-            $turnosCerrados = $turnosDelDia->where('estado', 'cerrado');
-            $ultimoTurno = $turnosDelDia->last();
-
-            if (!$tieneAbierto && $turnosCerrados->isNotEmpty()) {
-                $ultimoCerrado = $turnosCerrados->last();
-                $efectivoEnCaja = (float) $ultimoCerrado->total_efectivo_contado;
-                $diferenciaDia = round((float) $turnosCerrados->sum('diferencia_arqueo'), 2);
+            if ($cierres) {
+                $efectivoTexto = '₡' . number_format((float) $cierres->last()->total_efectivo_contado, 2);
+                $diferenciaDia = round((float) $cierres->sum('diferencia_arqueo'), 2);
 
                 if ($diferenciaDia > 0) {
-                    $bgEstado = '#d4edda';
-                    $colorTexto = '#155724';
-                    $textoEstado = 'SOBRANTE (+₡' . number_format($diferenciaDia, 2) . ')';
+                    [$bgEstado, $colorTexto, $textoEstado] = ['#d4edda', '#155724', 'SOBRANTE (+₡' . number_format($diferenciaDia, 2) . ')'];
                 } elseif ($diferenciaDia < 0) {
-                    $bgEstado = '#f8d7da';
-                    $colorTexto = '#721c24';
-                    $textoEstado = 'FALTANTE (-₡' . number_format(abs($diferenciaDia), 2) . ')';
+                    [$bgEstado, $colorTexto, $textoEstado] = ['#f8d7da', '#721c24', 'FALTANTE (-₡' . number_format(abs($diferenciaDia), 2) . ')'];
                 } else {
-                    $bgEstado = '#fff3cd';
-                    $colorTexto = '#856404';
-                    $textoEstado = 'EXACTO (₡0.00)';
+                    [$bgEstado, $colorTexto, $textoEstado] = ['#fff3cd', '#856404', 'EXACTO (₡0.00)'];
                 }
+            } elseif ($abierto && $fechaYmd === $hoy) {
+                $efectivoTexto = '₡' . number_format($this->turnoCajaService->calcularEfectivoDisponible($abierto), 2);
+                [$bgEstado, $colorTexto, $textoEstado] = ['#e2e8f0', '#475569', 'TURNO ABIERTO (EN CURSO)'];
             } else {
-                $turnoAbierto = $turnosDelDia->where('estado', 'abierto')->last() ?? $ultimoTurno;
-                $efectivoEnCaja = $this->turnoCajaService->calcularEfectivoDisponible($turnoAbierto);
-                $bgEstado = '#e2e8f0';
-                $colorTexto = '#475569';
-                $textoEstado = 'TURNO ABIERTO (EN CURSO)';
+                $efectivoTexto = '—';
+                [$bgEstado, $colorTexto, $textoEstado] = ['#e2e8f0', '#475569', 'SIN CIERRE (EL TURNO CONTINUÓ)'];
             }
 
             $fechaFmt = Carbon::parse($fechaYmd)->format('d/m/Y');
             $ventasFmt = number_format($ventasDia, 2);
-            $efectivoFmt = number_format($efectivoEnCaja, 2);
 
             $filasHtml .= <<<ROW
                 <tr>
                     <td style="text-align: center; font-weight: bold;">{$fechaFmt}</td>
                     <td class="monto">₡{$ventasFmt}</td>
-                    <td class="monto">₡{$efectivoFmt}</td>
+                    <td class="monto">{$efectivoTexto}</td>
                     <td style="background-color: {$bgEstado}; color: {$colorTexto}; font-weight: bold; text-align: center;">
                         {$textoEstado}
                     </td>

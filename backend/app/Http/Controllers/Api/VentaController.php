@@ -15,8 +15,15 @@ class VentaController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $request->validate(['fecha' => 'nullable|date_format:Y-m-d', 'turno_id' => 'nullable|integer']);
         $query = Venta::with(['detalles', 'pagos', 'cliente:id,nombre', 'usuario:id,nombre', 'anuladaPor:id,nombre'])
             ->latest();
+
+        // Ventas de un día calendario (aunque el turno venga abierto de días anteriores)
+        if ($request->filled('fecha')) {
+            $dia = $request->date('fecha');
+            $query->whereBetween('created_at', [$dia->copy()->startOfDay(), $dia->copy()->endOfDay()]);
+        }
 
         if ($request->filled('turno_id')) {
             $query->where('turno_id', $request->integer('turno_id'));

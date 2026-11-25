@@ -58,9 +58,12 @@ class VentaService
                 $venta->detalles()->delete();
                 $venta->pagos()->delete();
                 $numeroTicket = $venta->numero_ticket;
+                // Ticket en espera cobrado otro día: toma el número que le toca hoy
+                $numeroDia = $venta->created_at?->isToday() ? $venta->numero_dia : $this->siguienteNumeroDia();
             } else {
-                $ultimoTicket = Venta::max('numero_ticket') ?? 0;
-                $numeroTicket = $ultimoTicket + 1;
+                // Folio global único (auditoría) y número visible que reinicia cada día
+                $numeroTicket = (Venta::max('numero_ticket') ?? 0) + 1;
+                $numeroDia = $this->siguienteNumeroDia();
                 $venta = new Venta();
             }
 
@@ -122,6 +125,7 @@ class VentaService
 
             $venta->fill([
                 'numero_ticket' => $numeroTicket,
+                'numero_dia' => $numeroDia,
                 'idempotency_key' => $idempotencyKey,
                 'turno_id' => $turno->id,
                 'usuario_id' => $datos['usuario_id'],
@@ -195,6 +199,11 @@ class VentaService
 
             return $venta->load(['detalles', 'pagos', 'cliente', 'usuario:id,nombre']);
         }, 3);
+    }
+
+    private function siguienteNumeroDia(): int
+    {
+        return (int) Venta::whereBetween('created_at', [now()->startOfDay(), now()->endOfDay()])->max('numero_dia') + 1;
     }
 
     public function anularVenta(Venta $venta, int $usuarioId, string $motivo): Venta

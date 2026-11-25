@@ -37,6 +37,7 @@ class TurnoCajaController extends Controller
 
     public function resumenDia(Request $request): JsonResponse
     {
+        $request->validate(['fecha' => 'nullable|date_format:Y-m-d']);
         $fecha = $request->date('fecha')
             ? $request->date('fecha')->toDateString()
             : now()->toDateString();

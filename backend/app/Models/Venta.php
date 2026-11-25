@@ -12,6 +12,7 @@ class Venta extends Model
 
     protected $fillable = [
         'numero_ticket',
+        'numero_dia',
         'idempotency_key',
         'turno_id',
         'usuario_id',

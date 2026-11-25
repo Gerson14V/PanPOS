@@ -4,6 +4,7 @@
 return [
     'array' => 'El campo :attribute debe ser una lista.',
     'boolean' => 'El campo :attribute debe ser verdadero o falso.',
+    'date_format' => 'El campo :attribute debe ser una fecha con formato :format.',
     'exists' => 'El :attribute seleccionado no existe.',
     'in' => 'El valor de :attribute no es válido.',
     'integer' => 'El campo :attribute debe ser un número entero.',
@@ -31,6 +32,7 @@ return [
         'codigo_barras' => 'código de barras',
         'concepto' => 'concepto',
         'controlar_stock' => 'controlar existencia',
+        'fecha' => 'fecha',
         'departamento_id' => 'proveedor',
         'items' => 'productos del ticket',
         'items.*.cantidad' => 'cantidad',

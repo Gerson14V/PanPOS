@@ -19,6 +19,7 @@ export interface PagoTicket {
 
 export interface VentaTicket {
   numero_ticket: number;
+  numero_dia?: number | null;
   created_at?: string;
   total: number | string;
   estado?: string;
@@ -34,6 +35,10 @@ const METODOS: Record<string, string> = {
   sinpe: 'SINPE Móvil',
   credito: 'Crédito (fiado)',
 };
+
+/** Número que ve el cajero: reinicia cada día (el folio global queda como respaldo). */
+export const numeroTicket = (v: { numero_dia?: number | null; numero_ticket: number }): number =>
+  v.numero_dia ?? v.numero_ticket;
 
 const escapar = (texto: unknown): string =>
   String(texto ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -67,7 +72,7 @@ export const generarHtmlTicket = (venta: VentaTicket, config: Record<string, str
     .filter(Boolean)
     .join(' · ');
 
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Tiquete #${venta.numero_ticket}</title>
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Tiquete #${numeroTicket(venta)}</title>
 <style>
   @page { size: ${ancho}mm auto; margin: 2mm; }
   * { box-sizing: border-box; }
@@ -92,7 +97,8 @@ export const generarHtmlTicket = (venta: VentaTicket, config: Record<string, str
   </div>
   <hr>
   <table class="peq">
-    <tr><td>Tiquete</td><td class="num"><strong>#${venta.numero_ticket}</strong>${copia ? ' (COPIA)' : ''}</td></tr>
+    <tr><td>Tiquete</td><td class="num"><strong>#${numeroTicket(venta)}</strong>${copia ? ' (COPIA)' : ''}</td></tr>
+    ${venta.numero_dia ? `<tr><td>Folio</td><td class="num">${venta.numero_ticket}</td></tr>` : ''}
     <tr><td>Fecha</td><td class="num">${fecha.toLocaleDateString('es-CR')} ${fecha.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</td></tr>
     ${venta.usuario?.nombre ? `<tr><td>Atendió</td><td class="num">${escapar(venta.usuario.nombre)}</td></tr>` : ''}
     ${venta.cliente?.nombre ? `<tr><td>Cliente</td><td class="num">${escapar(venta.cliente.nombre)}</td></tr>` : ''}

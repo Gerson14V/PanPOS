@@ -354,4 +354,90 @@ class PanPosCoreTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors('respaldo');
     }
+
+    private function vender(int $turnoId, Producto $prod, int $cantidad, string $clave): \Illuminate\Testing\TestResponse
+    {
+        return $this->postJson('/api/ventas', [
+            'idempotency_key' => $clave,
+            'turno_id' => $turnoId,
+            'estado' => 'completada',
+            'items' => [['producto_id' => $prod->id, 'cantidad' => $cantidad]],
+            'pagos' => [['metodo_pago' => 'efectivo', 'monto' => 700 * $cantidad]],
+        ])->assertStatus(201);
+    }
+
+    public function test_turno_de_varios_dias_numera_y_corta_por_dia(): void
+    {
+        \Illuminate\Support\Carbon::setTestNow('2026-11-23 08:00:00');
+        [$prod, $turnoId] = $this->prepararCaja(); // fondo 5000, 5 empanadas a 700
+
+        $this->vender($turnoId, $prod, 1, 'd1-a')->assertJsonPath('numero_dia', 1);
+        $this->vender($turnoId, $prod, 1, 'd1-b')->assertJsonPath('numero_dia', 2);
+        $this->postJson("/api/turnos/{$turnoId}/movimientos", [
+            'tipo' => 'salida', 'metodo_pago' => 'efectivo', 'monto' => 400, 'concepto' => 'Hielo',
+        ])->assertStatus(201);
+
+        // Día siguiente, mismo turno abierto: el conteo vuelve a empezar
+        \Illuminate\Support\Carbon::setTestNow('2026-11-24 09:00:00');
+        $v = $this->vender($turnoId, $prod, 2, 'd2-a')->assertJsonPath('numero_dia', 1);
+        $this->assertSame(3, (int) $v->json('numero_ticket')); // folio global continúa
+
+        // Ventas del Día: solo las de hoy
+        $this->getJson('/api/ventas?fecha=2026-11-24')->assertStatus(200)->assertJsonCount(1);
+        $this->getJson('/api/ventas?fecha=24-11-2026')->assertStatus(422);
+
+        // Corte del día de hoy: solo lo de hoy; el efectivo inicial es lo que quedó ayer
+        $hoy = $this->getJson('/api/turnos/corte-dia?fecha=2026-11-24')->assertStatus(200);
+        $hoy->assertJsonPath('sin_datos', false)
+            ->assertJsonPath('estadisticas.cantidad_tickets', 1)
+            ->assertJsonPath('turno.estado', 'abierto')
+            ->assertJsonPath('turnos_del_dia.0.viene_de_otro_dia', true);
+        $this->assertEquals(6000.0, (float) $hoy->json('gaveta_efectivo.monto_inicial')); // 5000 + 1400 - 400
+        $this->assertEquals(7400.0, (float) $hoy->json('gaveta_efectivo.efectivo_esperado'));
+        $this->assertEquals(1400.0, (float) $hoy->json('ventas_totales'));
+
+        // Día anterior: sus 2 tickets y queda marcado sin cierre (el turno continuó)
+        $ayer = $this->getJson('/api/turnos/corte-dia?fecha=2026-11-23')->assertStatus(200);
+        $ayer->assertJsonPath('estadisticas.cantidad_tickets', 2)->assertJsonPath('turno.estado', 'sin_cierre');
+
+        // Corte de cajero (turno): acumula los dos días para cuadrar la gaveta
+        $this->getJson("/api/turnos/{$turnoId}/resumen")->assertJsonPath('estadisticas.cantidad_tickets', 3);
+
+        // Lista de días con su cantidad de tickets
+        $this->getJson('/api/turnos/fechas-disponibles')->assertStatus(200)
+            ->assertJsonPath('0.fecha', '2026-11-24')->assertJsonPath('0.cantidad_tickets', 1)->assertJsonPath('0.estado', 'abierto')
+            ->assertJsonPath('1.fecha', '2026-11-23')->assertJsonPath('1.cantidad_tickets', 2)->assertJsonPath('1.estado', 'sin_cierre');
+
+        // Excel diario: una fila por día con sus propias ventas
+        $html = app(ReporteExcelDiarioService::class)->generarHtmlMaestro();
+        $this->assertStringContainsString('23/11/2026', $html);
+        $this->assertStringContainsString('24/11/2026', $html);
+        $this->assertStringContainsString('SIN CIERRE', $html);
+        $this->assertStringContainsString('TURNO ABIERTO', $html);
+
+        // Un día futuro no tiene datos aunque el turno siga abierto
+        $this->getJson('/api/turnos/corte-dia?fecha=2026-11-30')->assertJsonPath('sin_datos', true);
+
+        \Illuminate\Support\Carbon::setTestNow();
+    }
+
+    public function test_ticket_en_espera_cobrado_otro_dia_toma_el_numero_de_ese_dia(): void
+    {
+        \Illuminate\Support\Carbon::setTestNow('2026-11-23 18:00:00');
+        [$prod, $turnoId] = $this->prepararCaja();
+        $this->vender($turnoId, $prod, 1, 'e-1');
+        $espera = $this->postJson('/api/ventas', [
+            'idempotency_key' => 'e-espera', 'turno_id' => $turnoId, 'estado' => 'en_espera',
+            'items' => [['producto_id' => $prod->id, 'cantidad' => 1]],
+        ])->assertStatus(201)->assertJsonPath('numero_dia', 2);
+
+        \Illuminate\Support\Carbon::setTestNow('2026-11-24 07:00:00');
+        $this->postJson('/api/ventas', [
+            'idempotency_key' => 'e-cobro', 'venta_en_espera_id' => $espera->json('id'), 'turno_id' => $turnoId,
+            'estado' => 'completada', 'items' => [['producto_id' => $prod->id, 'cantidad' => 1]],
+            'pagos' => [['metodo_pago' => 'efectivo', 'monto' => 700]],
+        ])->assertStatus(201)->assertJsonPath('numero_dia', 1);
+
+        \Illuminate\Support\Carbon::setTestNow();
+    }
 }

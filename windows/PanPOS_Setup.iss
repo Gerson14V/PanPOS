@@ -16,7 +16,7 @@
 
 #define MyAppName "PanPOS - Panaderia Don Paco"
 #define MyAppShortName "PanPOS"
-#define MyAppVersion "1.1.2"
+#define MyAppVersion "1.1.3"
 #define MyAppPublisher "Panaderia Don Paco"
 #define SourceFolder "PanPOS_Windows"
 

@@ -3,6 +3,7 @@ import { usePos } from '../context/PosContext';
 import { api, generarClaveIdempotencia, mensajeError, postConReintento } from '../api/client';
 import { Cliente } from '../types/models';
 import { BotonAccion } from './BotonAccion';
+import { numeroTicket } from '../utils/ticket';
 
 export const ModuloClientes: React.FC = () => {
   const { clientes, usuario, turno, recargarCatalogos } = usePos();
@@ -338,7 +339,7 @@ export const ModuloClientes: React.FC = () => {
                   detalleCuenta?.ventas_fiadas.map((v: any) => (
                     <div key={v.id} className="border rounded p-2 mb-2 bg-body-tertiary">
                       <div className="d-flex justify-content-between fw-bold">
-                        <span>Ticket #{v.numero_ticket} — {new Date(v.created_at).toLocaleString()}</span>
+                        <span>Ticket #{numeroTicket(v)} — {new Date(v.created_at).toLocaleString()}</span>
                         <span className="text-danger">Total Ticket: ₡{Number(v.total).toLocaleString()}</span>
                       </div>
                       <ul className="mb-0 small mt-1">

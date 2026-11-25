@@ -78,6 +78,7 @@ export interface StockActualizado {
 export interface RespuestaVenta {
   id: number;
   numero_ticket: number;
+  numero_dia?: number | null;
   total: number;
   estado: 'completada' | 'en_espera' | 'anulada';
   motivo_anulacion?: string | null;
