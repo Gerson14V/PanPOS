@@ -81,6 +81,9 @@ if (-not (Test-Path (Join-Path $Destino 'app\artisan'))) {
 $App      = Join-Path $Destino 'app'
 $Php      = Join-Path $Destino 'php\php.exe'
 $PhpIni   = Join-Path $Destino 'php\php-panpos.ini'
+# PHP corre con la configuracion del paquete (la nueva), no con la instalada:
+# una config vieja de la caja no debe mostrar advertencias durante la actualizacion.
+$IniEjecucion = if (Test-Path (Join-Path $Origen 'php-panpos.ini')) { Join-Path $Origen 'php-panpos.ini' } else { $PhpIni }
 $BaseDatos = Join-Path $App 'database\database.sqlite'
 
 if (-not (Test-Path $Php))       { Fallar "No se encontro php.exe en $Destino\php" }
@@ -131,7 +134,7 @@ function Ejecutar-Php([string[]]$argumentos) {
     $ErrorActionPreference = 'Continue'
     Push-Location (Split-Path $Php)
     try {
-        $salida = & $Php -c $PhpIni @argumentos 2>&1 | ForEach-Object { "$_" }
+        $salida = & $Php -c $IniEjecucion @argumentos 2>&1 | ForEach-Object { "$_" }
         $codigo = $LASTEXITCODE
     } finally {
         Pop-Location
