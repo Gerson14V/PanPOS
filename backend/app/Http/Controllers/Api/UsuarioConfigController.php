@@ -189,8 +189,14 @@ class UsuarioConfigController extends Controller
         return response()->json($usuario);
     }
 
-    public function eliminarUsuario(Usuario $usuario): JsonResponse
+    public function eliminarUsuario(Request $request, Usuario $usuario): JsonResponse
     {
+        if ($request->user()?->id === $usuario->id) {
+            throw ValidationException::withMessages([
+                'usuario' => 'No puede eliminar su propio usuario mientras tiene la sesión abierta.',
+            ]);
+        }
+
         if ($usuario->rol === 'admin') {
             $adminsActivos = Usuario::where('rol', 'admin')->where('activo', true)->count();
             if ($adminsActivos <= 1) {
@@ -215,9 +221,11 @@ class UsuarioConfigController extends Controller
             || DB::table('movimientos_inventario')->where('usuario_id', $usuario->id)->exists();
 
         if ($tieneHistorial) {
+            $sufijo = '_del_' . $usuario->id . '_' . time();
+            $baseUser = substr($usuario->username, 0, max(1, 50 - strlen($sufijo)));
             $usuario->update([
                 'activo' => false,
-                'username' => $usuario->username . '_del_' . time(),
+                'username' => $baseUser . $sufijo,
             ]);
         } else {
             $usuario->delete();

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { usePos } from '../context/PosContext';
 import { api, mensajeError } from '../api/client';
 import { Usuario } from '../types/models';
 import { imprimirTicket } from '../utils/ticket';
 import { sonidos } from '../utils/sonidos';
+import { BotonAccion } from './BotonAccion';
 
 type SeccionConfig =
   | 'menu'
@@ -24,11 +25,29 @@ type SeccionConfig =
   | 'cajon'
   | 'respaldo';
 
+const IconCard: React.FC<{
+  id: SeccionConfig;
+  icono: string;
+  titulo: string;
+  color?: string;
+  alSeleccionar: (id: SeccionConfig) => void;
+}> = ({ id, icono, titulo, color = 'text-primary', alSeleccionar }) => (
+  <button
+    type="button"
+    onClick={() => alSeleccionar(id)}
+    className="btn btn-config-tile shadow-sm d-flex flex-column align-items-center justify-content-center p-3 text-center"
+    style={{ width: '135px', height: '110px', transition: 'transform 0.12s' }}
+  >
+    <i className={`bi ${icono} fs-2 mb-1 ${color}`} />
+    <span className="small fw-semibold lh-sm">{titulo}</span>
+  </button>
+);
+
 export const ModuloConfiguracion: React.FC = () => {
   const { configuracion, recargarCatalogos, usuario: usuarioActual, setUsuario } = usePos();
   const [seccionActiva, setSeccionActiva] = useState<SeccionConfig>('menu');
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
-  const [formConfig, setFormConfig] = useState<Record<string, string>>({});
+  const [formConfig, setFormConfig] = useState<Record<string, string>>(configuracion);
   const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'danger'; texto: string } | null>(null);
 
   const [nombre, setNombre] = useState('');
@@ -37,25 +56,46 @@ export const ModuloConfiguracion: React.FC = () => {
   const [rol, setRol] = useState<'admin' | 'cajero'>('cajero');
   const [guardandoConfig, setGuardandoConfig] = useState(false);
   const [creandoUsuario, setCreandoUsuario] = useState(false);
+  const [procesandoUsuarioId, setProcesandoUsuarioId] = useState<number | null>(null);
+  const [respaldando, setRespaldando] = useState(false);
   const [editandoUsuario, setEditandoUsuario] = useState<Usuario | null>(null);
   const [editNombre, setEditNombre] = useState('');
   const [editUsername, setEditUsername] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
-  const cargarUsuarios = async () => {
+  const cargarUsuarios = useCallback(async () => {
     try {
       const res = await api.get('/usuarios');
       setUsuarios(res.data);
     } catch {
       setMensaje({ tipo: 'danger', texto: 'No se pudo cargar la lista de usuarios.' });
     }
-  };
+  }, []);
 
   useEffect(() => {
-    setFormConfig(configuracion);
-    cargarUsuarios();
-  }, [configuracion]);
+    let cancelado = false;
+    api
+      .get('/usuarios')
+      .then((res) => {
+        if (!cancelado) setUsuarios(res.data);
+      })
+      .catch(() => {
+        if (!cancelado) setMensaje({ tipo: 'danger', texto: 'No se pudo cargar la lista de usuarios.' });
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  const abrirSeccion = useCallback(
+    (id: SeccionConfig) => {
+      setMensaje(null);
+      setFormConfig(configuracion);
+      setSeccionActiva(id);
+    },
+    [configuracion]
+  );
 
   const guardarConfiguracion = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -91,26 +131,35 @@ export const ModuloConfiguracion: React.FC = () => {
   };
 
   const alternarRolRapido = async (u: Usuario) => {
+    if (procesandoUsuarioId !== null) return;
     const nuevoRol = u.rol === 'admin' ? 'cajero' : 'admin';
+    setProcesandoUsuarioId(u.id);
     try {
-      await api.put(`/usuarios/${u.id}`, { rol: nuevoRol });
+      const res = await api.put(`/usuarios/${u.id}`, { rol: nuevoRol });
+      if (usuarioActual && usuarioActual.id === u.id) {
+        setUsuario(res.data);
+      }
       await cargarUsuarios();
       setMensaje({ tipo: 'success', texto: `Rol de ${u.nombre} cambiado a ${nuevoRol.toUpperCase()}.` });
-    } catch (err: any) {
-      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'No se puede degradar al único Administrador.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se puede degradar al único Administrador.') });
+    } finally {
+      setProcesandoUsuarioId(null);
     }
   };
 
-  
   const eliminarUsuario = async (u: Usuario) => {
+    if (procesandoUsuarioId !== null) return;
     if (!window.confirm(`¿Está seguro de eliminar al usuario "${u.nombre}" (${u.username})?`)) return;
+    setProcesandoUsuarioId(u.id);
     try {
       await api.delete(`/usuarios/${u.id}`);
       await cargarUsuarios();
-      setMensaje({ tipo: "success", texto: `Usuario "${u.nombre}" eliminado correctamente.` });
-    } catch (err: any) {
-      const msg = err.response?.data?.errors?.usuario?.[0] || err.response?.data?.message || "No se pudo eliminar el usuario.";
-      setMensaje({ tipo: "danger", texto: msg });
+      setMensaje({ tipo: 'success', texto: `Usuario "${u.nombre}" eliminado correctamente.` });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudo eliminar el usuario.') });
+    } finally {
+      setProcesandoUsuarioId(null);
     }
   };
 
@@ -156,41 +205,20 @@ export const ModuloConfiguracion: React.FC = () => {
   };
 
   const dispararBackupManual = async () => {
+    if (respaldando) return;
+    setRespaldando(true);
     try {
-      const res = await api.post('/sistema/backup');
+      const res = await api.post('/sistema/backup', {}, { timeout: 120000 });
       setMensaje({
         tipo: 'success',
         texto: `Respaldo creado en: ${res.data.ruta_local} ${res.data.copiado_usb ? '(+ Copiado a USB)' : ''}`,
       });
     } catch (err) {
       setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudo ejecutar el respaldo manual.') });
+    } finally {
+      setRespaldando(false);
     }
   };
-
-  const IconCard = ({
-    id,
-    icono,
-    titulo,
-    color = 'text-primary',
-  }: {
-    id: SeccionConfig;
-    icono: string;
-    titulo: string;
-    color?: string;
-  }) => (
-    <button
-      type="button"
-      onClick={() => {
-        setMensaje(null);
-        setSeccionActiva(id);
-      }}
-      className="btn btn-config-tile shadow-sm d-flex flex-column align-items-center justify-content-center p-3 text-center"
-      style={{ width: '135px', height: '110px', transition: 'transform 0.12s' }}
-    >
-      <i className={`bi ${icono} fs-2 mb-1 ${color}`} />
-      <span className="small fw-semibold lh-sm">{titulo}</span>
-    </button>
-  );
 
   return (
     <div className="container-fluid py-2">
@@ -198,7 +226,7 @@ export const ModuloConfiguracion: React.FC = () => {
       <div className="bg-primary text-white px-3 py-2 rounded-top d-flex justify-content-between align-items-center shadow-sm">
         <div className="d-flex align-items-center gap-2">
           <h5 className="mb-0 fw-bold text-uppercase tracking-wide">CONFIGURACIÓN</h5>
-          <span className="badge bg-light text-dark">PanPOS v1.0.0</span>
+          <span className="badge bg-light text-dark">PanPOS</span>
         </div>
         <button
           type="button"
@@ -224,11 +252,11 @@ export const ModuloConfiguracion: React.FC = () => {
             <div className="mb-4">
               <h6 className="fw-bold border-bottom pb-2 mb-3 text-secondary">General</h6>
               <div className="d-flex flex-wrap gap-3">
-                <IconCard id="opciones_habilitadas" icono="bi-gear-fill" titulo="Opciones habilitadas" />
-                <IconCard id="cajeros" icono="bi-people-fill" titulo="Cajeros" color="text-info" />
-                <IconCard id="base_datos" icono="bi-database" titulo="Base de Datos" color="text-secondary" />
-                <IconCard id="facturacion" icono="bi-receipt" titulo="Facturación Electrónica" color="text-success" />
-                <IconCard id="folios" icono="bi-123" titulo="Modificar Folios" color="text-warning" />
+                <IconCard id="opciones_habilitadas" icono="bi-gear-fill" titulo="Opciones habilitadas" alSeleccionar={abrirSeccion} />
+                <IconCard id="cajeros" icono="bi-people-fill" titulo="Cajeros" color="text-info" alSeleccionar={abrirSeccion} />
+                <IconCard id="base_datos" icono="bi-database" titulo="Base de Datos" color="text-secondary" alSeleccionar={abrirSeccion} />
+                <IconCard id="facturacion" icono="bi-receipt" titulo="Facturación Electrónica" color="text-success" alSeleccionar={abrirSeccion} />
+                <IconCard id="folios" icono="bi-123" titulo="Modificar Folios" color="text-warning" alSeleccionar={abrirSeccion} />
               </div>
             </div>
 
@@ -236,13 +264,13 @@ export const ModuloConfiguracion: React.FC = () => {
             <div className="mb-4">
               <h6 className="fw-bold border-bottom pb-2 mb-3 text-secondary">Personalización</h6>
               <div className="d-flex flex-wrap gap-3">
-                <IconCard id="logotipo" icono="bi-shop" titulo="Datos y Logotipo del Negocio" />
-                <IconCard id="ticket" icono="bi-file-text" titulo="Ticket" color="text-secondary" />
-                <IconCard id="formas_pago" icono="bi-credit-card" titulo="Formas de Pago" color="text-success" />
-                <IconCard id="impuestos" icono="bi-bank" titulo="Impuestos (IVA)" color="text-warning" />
-                <IconCard id="corte" icono="bi-scissors" titulo="Corte de Caja" color="text-danger" />
-                <IconCard id="moneda" icono="bi-coin" titulo="Símbolo de Moneda" color="text-success" />
-                <IconCard id="unidades" icono="bi-rulers" titulo="Unidades de Medida" color="text-info" />
+                <IconCard id="logotipo" icono="bi-shop" titulo="Datos y Logotipo del Negocio" alSeleccionar={abrirSeccion} />
+                <IconCard id="ticket" icono="bi-file-text" titulo="Ticket" color="text-secondary" alSeleccionar={abrirSeccion} />
+                <IconCard id="formas_pago" icono="bi-credit-card" titulo="Formas de Pago" color="text-success" alSeleccionar={abrirSeccion} />
+                <IconCard id="impuestos" icono="bi-bank" titulo="Impuestos (IVA)" color="text-warning" alSeleccionar={abrirSeccion} />
+                <IconCard id="corte" icono="bi-scissors" titulo="Corte de Caja" color="text-danger" alSeleccionar={abrirSeccion} />
+                <IconCard id="moneda" icono="bi-coin" titulo="Símbolo de Moneda" color="text-success" alSeleccionar={abrirSeccion} />
+                <IconCard id="unidades" icono="bi-rulers" titulo="Unidades de Medida" color="text-info" alSeleccionar={abrirSeccion} />
               </div>
             </div>
 
@@ -250,9 +278,9 @@ export const ModuloConfiguracion: React.FC = () => {
             <div className="mb-4">
               <h6 className="fw-bold border-bottom pb-2 mb-3 text-secondary">Dispositivos y Servicios</h6>
               <div className="d-flex flex-wrap gap-3">
-                <IconCard id="impresora" icono="bi-printer" titulo="Impresora de Tickets" />
-                <IconCard id="lector" icono="bi-upc-scan" titulo="Lector de Códigos" color="text-danger" />
-                <IconCard id="cajon" icono="bi-cash-stack" titulo="Cajón de Dinero" color="text-success" />
+                <IconCard id="impresora" icono="bi-printer" titulo="Impresora de Tickets" alSeleccionar={abrirSeccion} />
+                <IconCard id="lector" icono="bi-upc-scan" titulo="Lector de Códigos" color="text-danger" alSeleccionar={abrirSeccion} />
+                <IconCard id="cajon" icono="bi-cash-stack" titulo="Cajón de Dinero" color="text-success" alSeleccionar={abrirSeccion} />
               </div>
             </div>
 
@@ -260,7 +288,7 @@ export const ModuloConfiguracion: React.FC = () => {
             <div>
               <h6 className="fw-bold border-bottom pb-2 mb-3 text-secondary">Mantenimiento</h6>
               <div className="d-flex flex-wrap gap-3">
-                <IconCard id="respaldo" icono="bi-floppy" titulo="Respaldo Automático" color="text-primary" />
+                <IconCard id="respaldo" icono="bi-floppy" titulo="Respaldo Automático" color="text-primary" alSeleccionar={abrirSeccion} />
               </div>
             </div>
           </div>
@@ -352,14 +380,19 @@ export const ModuloConfiguracion: React.FC = () => {
                             </span>
                           </td>
                           <td className="text-end">
-                            <button className="btn btn-sm btn-outline-success me-1" onClick={() => abrirEdicionUsuario(u)}>
+                            <button className="btn btn-sm btn-outline-success me-1" disabled={procesandoUsuarioId !== null} onClick={() => abrirEdicionUsuario(u)}>
                               Editar
                             </button>
-                            <button className="btn btn-sm btn-outline-primary me-1" onClick={() => alternarRolRapido(u)}>
+                            <button className="btn btn-sm btn-outline-primary me-1" disabled={procesandoUsuarioId !== null} onClick={() => alternarRolRapido(u)}>
                               Cambiar a {u.rol === 'admin' ? 'CAJERO' : 'ADMIN'}
                             </button>
 
-                            <button className="btn btn-sm btn-outline-danger" onClick={() => eliminarUsuario(u)}>
+                            <button
+                              className="btn btn-sm btn-outline-danger"
+                              disabled={procesandoUsuarioId !== null || usuarioActual?.id === u.id}
+                              title={usuarioActual?.id === u.id ? 'No puede eliminar su propio usuario' : 'Eliminar usuario'}
+                              onClick={() => eliminarUsuario(u)}
+                            >
                               Eliminar
                             </button>
                           </td>
@@ -402,9 +435,15 @@ export const ModuloConfiguracion: React.FC = () => {
                 <div className="alert alert-success">
                   <strong>Motor SQLite Blindado Activo:</strong> Operando con <code>PRAGMA journal_mode = WAL</code> y <code>synchronous = FULL</code> (Resistente a cortes de energía eléctrica).
                 </div>
-                <button type="button" className="btn btn-primary fw-bold" onClick={dispararBackupManual}>
+                <BotonAccion
+                  type="button"
+                  className="btn btn-primary fw-bold"
+                  cargando={respaldando}
+                  textoCargando="Respaldando base de datos..."
+                  onClick={dispararBackupManual}
+                >
                   <i className="bi bi-floppy me-1" />Compactar (VACUUM) y Generar Copia de Seguridad Ahora
-                </button>
+                </BotonAccion>
               </div>
             )}
 
@@ -719,9 +758,15 @@ export const ModuloConfiguracion: React.FC = () => {
                   <label className="form-label fw-semibold">Ruta de Llave Maya / USB Externa (Copia automática al cerrar turno)</label>
                   <input className="form-control" placeholder="Ej: E:\Respaldos_PanPOS o /media/gerson/USB" value={formConfig['ruta_respaldo_usb'] || ''} onChange={(e) => setFormConfig({ ...formConfig, ruta_respaldo_usb: e.target.value })} />
                 </div>
-                <button type="button" className="btn btn-warning fw-bold" onClick={dispararBackupManual}>
+                <BotonAccion
+                  type="button"
+                  className="btn btn-warning fw-bold"
+                  cargando={respaldando}
+                  textoCargando="Creando respaldo..."
+                  onClick={dispararBackupManual}
+                >
                   <i className="bi bi-floppy me-1" />Ejecutar Respaldo Inmediato Ahora
-                </button>
+                </BotonAccion>
               </div>
             )}
           </div>

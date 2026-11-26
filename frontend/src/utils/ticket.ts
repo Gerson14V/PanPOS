@@ -115,35 +115,75 @@ export const generarHtmlTicket = (venta: VentaTicket, config: Record<string, str
 </body></html>`;
 };
 
+/** Mantiene una sola instancia activa de iframe de impresión para no acumular memoria. */
+let iframeActivo: HTMLIFrameElement | null = null;
+let timerLimpiezaActivo: number | null = null;
+
+const limpiarIframeImpresion = (objetivo?: HTMLIFrameElement | null) => {
+  const el = objetivo ?? iframeActivo;
+  if (!el) return;
+  try {
+    if (el.contentWindow) el.contentWindow.onafterprint = null;
+  } catch {
+    // Ignorar errores de ventana ya descargada
+  }
+  el.remove();
+  if (el === iframeActivo) {
+    iframeActivo = null;
+    if (timerLimpiezaActivo !== null) {
+      window.clearTimeout(timerLimpiezaActivo);
+      timerLimpiezaActivo = null;
+    }
+  }
+};
+
 /** Imprime un documento HTML en la impresora predeterminada desde un iframe oculto. */
 const imprimirHtml = (html: string): void => {
+  limpiarIframeImpresion();
+
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
   document.body.appendChild(iframe);
+  iframeActivo = iframe;
 
-  const doc = iframe.contentWindow?.document;
-  if (!doc) {
-    iframe.remove();
+  const win = iframe.contentWindow;
+  const doc = win?.document;
+  if (!win || !doc) {
+    limpiarIframeImpresion(iframe);
     return;
   }
-  doc.open();
-  doc.write(html);
-  doc.close();
 
-  iframe.contentWindow!.onafterprint = () => window.setTimeout(() => iframe.remove(), 1000);
-  // Pequeña espera para que el navegador termine de maquetar el tiquete
+  try {
+    doc.open();
+    doc.write(html);
+    doc.close();
+  } catch {
+    limpiarIframeImpresion(iframe);
+    return;
+  }
+
+  win.onafterprint = () => {
+    window.setTimeout(() => limpiarIframeImpresion(iframe), 500);
+  };
+
   // Quien tenía el foco (normalmente el buscador de la caja) lo recupera al terminar
   const enfocadoAntes = document.activeElement as HTMLElement | null;
   window.setTimeout(() => {
+    if (!iframe.isConnected || !iframe.contentWindow) {
+      limpiarIframeImpresion(iframe);
+      return;
+    }
     try {
-      iframe.contentWindow!.focus();
-      iframe.contentWindow!.print();
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch {
+      // Un error del diálogo de impresión no debe tumbar la app
     } finally {
       // Devolver el foco a la caja: si queda dentro del iframe, F12/ESC/escáner dejan de funcionar
       window.focus();
       enfocadoAntes?.focus?.();
-      window.setTimeout(() => iframe.remove(), 60000);
+      timerLimpiezaActivo = window.setTimeout(() => limpiarIframeImpresion(iframe), 20000);
     }
   }, 150);
 };

@@ -86,6 +86,8 @@ Type: filesandordirs; Name: "{app}\browser_profile"
 Type: files; Name: "{app}\php_error.log"
 Type: files; Name: "{app}\php_error.log.old"
 Type: files; Name: "{app}\iniciando.lock"
+Type: files; Name: "{app}\servidor_activo.flag"
+Type: files; Name: "{app}\panpos_supervisor.cmd"
 
 [Code]
 // Si PanPOS ya esta instalado y abierto, se detiene su servidor antes de copiar

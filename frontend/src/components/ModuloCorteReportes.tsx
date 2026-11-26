@@ -80,8 +80,9 @@ export const ModuloCorteReportes: React.FC = () => {
   const [cerrando, setCerrando] = useState(false);
   const [cargandoCorte, setCargandoCorte] = useState(false);
   const [descargandoExcel, setDescargandoExcel] = useState(false);
-  // Evita que una respuesta lenta de un corte anterior reemplace al que se está viendo
+  // Evita que una respuesta lenta de un corte o reporte anterior reemplace al actual
   const consultaCorteRef = useRef(0);
+  const consultaReporteRef = useRef(0);
 
   // Estados de Reportes y Gráficos (Un Día Específico / Semana / Mes / Intervalo)
   const [tipoPeriodo, setTipoPeriodo] = useState<TipoPeriodo>('un_dia');
@@ -127,11 +128,14 @@ export const ModuloCorteReportes: React.FC = () => {
   };
 
   const cargarReportePeriodo = async (fDesde = desde, fHasta = hasta) => {
+    const idConsulta = ++consultaReporteRef.current;
     try {
       const res = await api.get(`/reportes/ventas-periodo?desde=${fDesde}&hasta=${fHasta}`);
-      setReporte(res.data);
+      if (idConsulta === consultaReporteRef.current) setReporte(res.data);
     } catch (err) {
-      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'Error al consultar el reporte del período.') });
+      if (idConsulta === consultaReporteRef.current) {
+        setMensaje({ tipo: 'danger', texto: mensajeError(err, 'Error al consultar el reporte del período.') });
+      }
     }
   };
 
@@ -225,15 +229,19 @@ export const ModuloCorteReportes: React.FC = () => {
         { timeout: 60000 }
       );
       // Tiquete de cierre con lo contado y la diferencia (si la impresión automática está activa)
-      if ((configuracion['impresion_escpos_activa'] ?? '0') === '1' && resumen && !resumen.sin_datos) {
-        imprimirCorte({ ...resumen, turno: { ...resumen.turno, ...res.data.turno } }, configuracion);
-      }
+      const debeImprimir = (configuracion['impresion_escpos_activa'] ?? '0') === '1' && resumen && !resumen.sin_datos;
+      const datosImpresion = debeImprimir ? { ...resumen, turno: { ...resumen.turno, ...res.data.turno } } : null;
       const msgBackup = res.data.respaldo?.guardado
         ? `Respaldo BD: ${res.data.respaldo.archivo}`
         : 'Respaldo BD: No se pudo generar';
       const msgExcel = res.data.excel_diario?.guardado
         ? `Excel diario actualizado en: ${res.data.excel_diario.ruta}`
         : 'Excel diario: No se pudo actualizar (cierre el archivo si está abierto)';
+      if (datosImpresion) {
+        imprimirCorte(datosImpresion, configuracion);
+        // Dar margen a que el iframe dispare window.print() antes de que alert() bloquee el hilo
+        await new Promise((r) => window.setTimeout(r, 350));
+      }
       alert(`Turno #${turno.id} cerrado con éxito.\n${msgBackup}\n${msgExcel}`);
       limpiarCarrito();
       // Igual que "Salir": la sesión también se cierra en el servidor
@@ -387,7 +395,7 @@ export const ModuloCorteReportes: React.FC = () => {
                     modoCorte === 'dia' && fechaCorteDia === hoyStr ? 'btn-primary' : 'btn-outline-primary'
                   }`}
                   onClick={() => {
-                    setFechaCorteDia(hoyStr);
+                    setFechaCorteDia(fechaLocalISO());
                     setModoCorte('dia');
                     setMostrarConteo(false);
                   }}
@@ -1079,7 +1087,7 @@ export const ModuloCorteReportes: React.FC = () => {
                   />
                   <button
                     className="btn btn-sm btn-outline-secondary fw-semibold"
-                    onClick={() => cambiarDiaUnico(hoyStr)}
+                    onClick={() => cambiarDiaUnico(fechaLocalISO())}
                   >
                     Hoy
                   </button>

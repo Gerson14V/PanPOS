@@ -26,24 +26,34 @@ const MainLayout: React.FC = () => {
 
   const clientesVisible = (configuracion['modulo_clientes_activo'] ?? '1') === '1';
 
-  // Al cambiar la sesión (cierre de turno, sesión vencida, nuevo ingreso) se vuelve a Ventas:
-  // los otros módulos consultan la API al montarse y sin sesión fallarían sin permiso.
-  const [usuarioPrevio, setUsuarioPrevio] = useState(usuario?.id);
-  if (usuarioPrevio !== usuario?.id) {
-    setUsuarioPrevio(usuario?.id);
-    setModuloActivo('ventas');
-  }
-  const moduloVisible = usuario ? moduloActivo : 'ventas';
+  // Si la sesión cambia, se desactiva Clientes o un admin se degrada a cajero, volver a Ventas sin loops de render.
+  const [hoyIso, setHoyIso] = useState(() => fechaLocalISO());
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const actual = fechaLocalISO();
+      setHoyIso((prev) => (prev === actual ? prev : actual));
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  const moduloVisible =
+    !usuario
+      ? 'ventas'
+      : moduloActivo === 'clientes' && !clientesVisible
+      ? 'ventas'
+      : moduloActivo === 'config' && usuario.rol !== 'admin'
+      ? 'ventas'
+      : moduloActivo;
 
   // Turno abierto desde un día anterior: se recomienda cerrarlo para que el corte
   // del día y los respaldos de cierre queden al día.
   const turnoDeOtroDia =
-    !!turno?.fecha_apertura && fechaLocalISO(new Date(turno.fecha_apertura)) !== fechaLocalISO();
+    !!turno?.fecha_apertura && fechaLocalISO(new Date(turno.fecha_apertura)) !== hoyIso;
   const diasTurnoAbierto = turnoDeOtroDia
     ? Math.max(
         1,
         Math.round(
-          (Date.parse(fechaLocalISO()) - Date.parse(fechaLocalISO(new Date(turno!.fecha_apertura)))) / 86400000
+          (Date.parse(hoyIso) - Date.parse(fechaLocalISO(new Date(turno!.fecha_apertura)))) / 86400000
         )
       )
     : 0;

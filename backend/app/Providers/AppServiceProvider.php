@@ -2,8 +2,9 @@
 
 namespace App\Providers;
 
+use Illuminate\Database\Events\ConnectionEstablished;
 use Illuminate\Database\SQLiteConnection;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -15,11 +16,14 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // WAL, synchronous=FULL y busy_timeout=5000 ya se aplican desde config/database.php
-        if (DB::connection() instanceof SQLiteConnection) {
-            DB::statement('PRAGMA foreign_keys = ON;');
-            DB::statement('PRAGMA temp_store = MEMORY;');
-            DB::statement('PRAGMA cache_size = -16000;');
-        }
+        // Solo aplica PRAGMAs cuando realmente se abre una conexión SQLite
+        // (las peticiones estáticas no abren la BD) y con caché de 8 MB acorde a 4 GB RAM.
+        Event::listen(ConnectionEstablished::class, function (ConnectionEstablished $event): void {
+            if ($event->connection instanceof SQLiteConnection) {
+                $event->connection->statement('PRAGMA foreign_keys = ON;');
+                $event->connection->statement('PRAGMA temp_store = MEMORY;');
+                $event->connection->statement('PRAGMA cache_size = -8000;');
+            }
+        });
     }
 }

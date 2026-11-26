@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { usePos } from '../context/PosContext';
 import { api, generarClaveIdempotencia, mensajeError, postConReintento } from '../api/client';
 import { PagoItem, Producto, RespuestaVenta } from '../types/models';
@@ -23,6 +23,7 @@ export const ModuloVentas: React.FC = () => {
     reemplazarCarrito,
     limpiarCarrito,
     aplicarStockActualizado,
+    actualizarSaldoCliente,
   } = usePos();
 
   const [busqueda, setBusqueda] = useState('');
@@ -67,19 +68,22 @@ export const ModuloVentas: React.FC = () => {
   const [movConcepto, setMovConcepto] = useState('');
   const [errorMovCaja, setErrorMovCaja] = useState<string | null>(null);
 
-  const totalVenta = carrito.reduce((acc, i) => acc + i.subtotal, 0);
+  const totalVenta = useMemo(
+    () => Math.round(carrito.reduce((acc, i) => acc + i.subtotal, 0) * 100) / 100,
+    [carrito]
+  );
   const efMixtoVal = Number(montoEfectivoMixto) || 0;
   const tjMixtoVal = Number(montoTarjetaMixto) || 0;
   const spMixtoVal = Number(montoSinpeMixto) || 0;
   const crMixtoVal = Number(montoCreditoMixto) || 0;
-  const sumaMixto = efMixtoVal + tjMixtoVal + spMixtoVal + crMixtoVal;
+  const sumaMixto = Math.round((efMixtoVal + tjMixtoVal + spMixtoVal + crMixtoVal) * 100) / 100;
   const mixtoSinNegativos = efMixtoVal >= 0 && tjMixtoVal >= 0 && spMixtoVal >= 0 && crMixtoVal >= 0;
   const faltaClienteCredito =
     (metodoPrincipal === 'credito' || (metodoPrincipal === 'mixto' && crMixtoVal > 0)) &&
     !clienteId;
   const mixtoCuadra = metodoPrincipal !== 'mixto' || (mixtoSinNegativos && Math.abs(sumaMixto - totalVenta) < 0.01);
-  const efectivoSuficiente = metodoPrincipal !== 'efectivo' || (Number(pagaCon) || 0) >= totalVenta;
-  const cobroValido = !faltaClienteCredito && mixtoCuadra && efectivoSuficiente;
+  const efectivoSuficiente = metodoPrincipal !== 'efectivo' || (Number(pagaCon) || 0) + 0.001 >= totalVenta;
+  const cobroValido = totalVenta > 0 && !faltaClienteCredito && mixtoCuadra && efectivoSuficiente;
 
   // Límite de crédito sugerido (Configuración > Formas de Pago): solo advierte, no bloquea
   const limiteCredito = Number(configuracion['limite_credito_default'] || 0);
@@ -88,7 +92,7 @@ export const ModuloVentas: React.FC = () => {
   const deudaResultante = clienteCredito ? Number(clienteCredito.saldo_deudor) + montoACredito : 0;
   const excedeLimiteCredito = limiteCredito > 0 && montoACredito > 0 && !!clienteCredito && deudaResultante > limiteCredito;
   const mostrarRapidos = (configuracion['panel_botones_rapidos'] ?? '1') === '1';
-  const botonesRapidos = productos.filter((p) => p.mostrar_boton_rapido);
+  const botonesRapidos = useMemo(() => productos.filter((p) => p.mostrar_boton_rapido), [productos]);
 
   const hayModalAbierto =
     modalCobro || modalComun || modalCajaMov !== null || modalEspera || modalVentasDia || !usuario || !turno;
@@ -190,83 +194,83 @@ export const ModuloVentas: React.FC = () => {
     }
   }, [hayModalAbierto]);
 
-  useEffect(() => {
-    if (carrito.length === 0 || !turno || !usuario) {
-      setVentaEnEsperaId(null);
+  const ventaEnEsperaActiva = carrito.length > 0 && !!turno && !!usuario ? ventaEnEsperaId : null;
+
+  // Referencia estable para el listener global de teclado: evita desmontar/remontar
+  // el evento en cada dígito que envía el lector de códigos de barras.
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      if (procesandoVenta || procesandoMovCaja) return;
+      if (modalCobro) { setModalCobro(false); return; }
+      if (modalComun) { setModalComun(false); return; }
+      if (modalCajaMov) { setModalCajaMov(null); return; }
+      if (modalEspera) { setModalEspera(false); return; }
+      if (modalVentasDia) { setModalVentasDia(false); return; }
     }
-  }, [carrito.length, turno?.id, usuario?.id]);
+    if (e.key === 'F12') {
+      e.preventDefault();
+      if (carrito.length > 0 && !hayModalAbierto) abrirModalCobro();
+      return;
+    }
+    if (e.key === 'F6' && !hayModalAbierto) {
+      e.preventDefault();
+      void abrirTicketsEspera();
+      return;
+    }
+    if (e.key === 'F7' && !hayModalAbierto) {
+      e.preventDefault();
+      abrirMovimientoCaja('entrada');
+      return;
+    }
+    if (e.key === 'F8' && !hayModalAbierto) {
+      e.preventDefault();
+      abrirMovimientoCaja('salida');
+      return;
+    }
+
+    if (hayModalAbierto) return;
+
+    const activeEl = document.activeElement as HTMLElement | null;
+    const esInputScan = activeEl === inputScanRef.current;
+    const esOtroInput =
+      activeEl &&
+      !esInputScan &&
+      (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+
+    if (esOtroInput) {
+      if (e.key === 'Enter') {
+        activeEl.blur();
+        inputScanRef.current?.focus();
+      }
+      return;
+    }
+
+    if (!esInputScan) {
+      if (e.key === 'Enter') {
+        if (busqueda.trim().length > 0) {
+          e.preventDefault();
+          procesarTerminoBusqueda(busqueda);
+        }
+        inputScanRef.current?.focus();
+      } else if (e.key === 'Backspace') {
+        inputScanRef.current?.focus();
+        setBusqueda((prev) => prev.slice(0, -1));
+      } else if (e.key === ' ' && activeEl?.tagName === 'BUTTON') {
+        return;
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        inputScanRef.current?.focus();
+        setBusqueda((prev) => prev + e.key);
+      }
+    }
+  };
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (procesandoVenta || procesandoMovCaja) return;
-        if (modalCobro) { setModalCobro(false); return; }
-        if (modalComun) { setModalComun(false); return; }
-        if (modalCajaMov) { setModalCajaMov(null); return; }
-        if (modalEspera) { setModalEspera(false); return; }
-        if (modalVentasDia) { setModalVentasDia(false); return; }
-      }
-      if (e.key === 'F12') {
-        e.preventDefault();
-        if (carrito.length > 0 && !hayModalAbierto) abrirModalCobro();
-        return;
-      }
-      if (e.key === 'F6' && !hayModalAbierto) {
-        e.preventDefault();
-        abrirTicketsEspera();
-        return;
-      }
-      if (e.key === 'F7' && !hayModalAbierto) {
-        e.preventDefault();
-        abrirMovimientoCaja('entrada');
-        return;
-      }
-      if (e.key === 'F8' && !hayModalAbierto) {
-        e.preventDefault();
-        abrirMovimientoCaja('salida');
-        return;
-      }
-
-      if (hayModalAbierto) return;
-
-      const activeEl = document.activeElement as HTMLElement | null;
-      const esInputScan = activeEl === inputScanRef.current;
-      const esOtroInput =
-        activeEl &&
-        !esInputScan &&
-        (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
-
-      if (esOtroInput) {
-        if (e.key === 'Enter') {
-          activeEl.blur();
-          inputScanRef.current?.focus();
-        }
-        return;
-      }
-
-      if (!esInputScan) {
-        if (e.key === 'Enter') {
-          if (busqueda.trim().length > 0) {
-            e.preventDefault();
-            procesarTerminoBusqueda(busqueda);
-          }
-          inputScanRef.current?.focus();
-        } else if (e.key === 'Backspace') {
-          inputScanRef.current?.focus();
-          setBusqueda((prev) => prev.slice(0, -1));
-        } else if (e.key === ' ' && activeEl?.tagName === 'BUTTON') {
-          return;
-        } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-          e.preventDefault();
-          inputScanRef.current?.focus();
-          setBusqueda((prev) => prev + e.key);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [carrito, hayModalAbierto, busqueda, procesarTerminoBusqueda, modalCobro, modalComun, modalCajaMov, modalEspera, modalVentasDia, procesandoVenta, procesandoMovCaja]);
+    const onKeyDown = (e: KeyboardEvent) => keyHandlerRef.current(e);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const mantenerFocoEnLector = (e: React.MouseEvent) => {
     if (hayModalAbierto) return;
@@ -289,14 +293,21 @@ export const ModuloVentas: React.FC = () => {
     setModalCobro(true);
   };
 
-  const ventasDiaFiltradas = filtroVentasDia === 'todas' ? ventasDia : ventasDia.filter((v) => v.estado === filtroVentasDia);
-  const totalesPorMetodo = ventasDia
-    .filter((v) => v.estado === 'completada')
-    .flatMap((v) => v.pagos || [])
-    .reduce<Record<string, number>>((acc, p) => {
-      acc[p.metodo_pago] = (acc[p.metodo_pago] || 0) + Number(p.monto);
-      return acc;
-    }, {});
+  const ventasDiaFiltradas = useMemo(
+    () => (filtroVentasDia === 'todas' ? ventasDia : ventasDia.filter((v) => v.estado === filtroVentasDia)),
+    [ventasDia, filtroVentasDia]
+  );
+  const totalesPorMetodo = useMemo(
+    () =>
+      ventasDia
+        .filter((v) => v.estado === 'completada')
+        .flatMap((v) => v.pagos || [])
+        .reduce<Record<string, number>>((acc, p) => {
+          acc[p.metodo_pago] = (acc[p.metodo_pago] || 0) + Number(p.monto);
+          return acc;
+        }, {}),
+    [ventasDia]
+  );
 
   const abrirVentasDelDia = async () => {
     if (!turno || cargandoLista) return;
@@ -342,6 +353,7 @@ export const ModuloVentas: React.FC = () => {
         motivo_anulacion: motivo.trim(),
       });
       aplicarStockActualizado(res.data.productos_actualizados);
+      actualizarSaldoCliente(res.data.cliente_actualizado);
       // Actualizar la fila en la lista abierta sin volver a descargarla
       setVentasDia((prev) =>
         prev.map((v) =>
@@ -394,7 +406,7 @@ export const ModuloVentas: React.FC = () => {
       // sin riesgo de registrar la venta dos veces.
       const res = await postConReintento<RespuestaVenta>('/ventas', {
         idempotency_key: estado === 'completada' ? (idempotencyKey || generarClaveIdempotencia('venta')) : generarClaveIdempotencia('espera'),
-        venta_en_espera_id: ventaEnEsperaId,
+        venta_en_espera_id: ventaEnEsperaActiva,
         turno_id: turno.id,
         // El cliente solo se asocia si hay crédito (o al guardar en espera); así una venta
         // en efectivo no queda a nombre del cliente elegido antes en la pestaña Crédito.
@@ -411,6 +423,7 @@ export const ModuloVentas: React.FC = () => {
 
       limpiarCarrito();
       aplicarStockActualizado(res.data.productos_actualizados);
+      actualizarSaldoCliente(res.data.cliente_actualizado);
       setIdempotencyKey('');
       setVentaEnEsperaId(null);
       setClienteId('');
@@ -468,7 +481,7 @@ export const ModuloVentas: React.FC = () => {
   };
 
   const recuperarTicketEspera = (venta: any) => {
-    const itemsRecuperados = venta.detalles.map((d: any, idx: number) => {
+    const itemsRecuperados = (venta.detalles || []).map((d: any, idx: number) => {
       const prod = productos.find((p) => p.id === d.producto_id);
       const precio = Number(d.precio_unitario);
       const cant = Math.max(1, Number(d.cantidad) || 1);
@@ -506,6 +519,7 @@ export const ModuloVentas: React.FC = () => {
       const monto = Number(movMonto);
       setMovMonto('');
       setMovConcepto('');
+      setClaveMovCaja('');
       setModalCajaMov(null);
       setMensaje({
         tipo: 'success',
@@ -518,16 +532,13 @@ export const ModuloVentas: React.FC = () => {
     }
   };
 
-  const sugerenciasBusqueda =
-    busqueda.trim().length > 1 && !busqueda.includes('*')
-      ? productos
-          .filter(
-            (p) =>
-              p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-              p.codigo_barras.toLowerCase().includes(busqueda.toLowerCase())
-          )
-          .slice(0, 6)
-      : [];
+  const sugerenciasBusqueda = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (q.length <= 1 || q.includes('*')) return [];
+    return productos
+      .filter((p) => p.nombre.toLowerCase().includes(q) || p.codigo_barras.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [busqueda, productos]);
 
   return (
     <div className="container-fluid py-2" onClick={mantenerFocoEnLector}>
@@ -882,7 +893,7 @@ export const ModuloVentas: React.FC = () => {
                     {ventasDiaFiltradas.length === 0 ? (
                       <tr>
                         <td colSpan={9} className="text-center text-muted py-4">
-                          {ventasDia.length === 0 ? 'Aún no hay ventas registradas en este turno.' : 'No hay tickets con este filtro.'}
+                          {ventasDia.length === 0 ? 'Aún no hay ventas registradas el día de hoy.' : 'No hay tickets con este filtro.'}
                         </td>
                       </tr>
                     ) : (
@@ -893,7 +904,7 @@ export const ModuloVentas: React.FC = () => {
                           <td className="small">{v.usuario?.nombre || '—'}</td>
                           <td>{v.cliente?.nombre || 'Contado'}</td>
                           <td className="small">
-                            {v.detalles.map((d: any) => `${d.cantidad}x ${d.descripcion_producto}`).join(', ')}
+                            {(v.detalles || []).map((d: any) => `${d.cantidad}x ${d.descripcion_producto}`).join(', ')}
                             {v.motivo_anulacion && (
                               <div className="text-danger fw-bold">Motivo: {v.motivo_anulacion}</div>
                             )}
@@ -1186,7 +1197,7 @@ export const ModuloVentas: React.FC = () => {
                 </div>
                 <div className="mb-2">
                   <label className="form-label">Precio Unitario (₡)</label>
-                  <input type="number" min="1" className="form-control" value={comunPrecio} onChange={(e) => setComunPrecio(e.target.value)} autoFocus required />
+                  <input type="number" min="1" step="any" className="form-control" value={comunPrecio} onChange={(e) => setComunPrecio(e.target.value)} autoFocus required />
                 </div>
                 <div className="mb-2">
                   <label className="form-label">Cantidad</label>
@@ -1271,7 +1282,7 @@ export const ModuloVentas: React.FC = () => {
                         onClick={() => recuperarTicketEspera(v)}
                       >
                         <div>
-                          <strong>Ticket #{numeroTicket(v)}</strong> ({v.detalles.length} líneas)
+                          <strong>Ticket #{numeroTicket(v)}</strong> ({(v.detalles || []).length} líneas)
                         </div>
                         <span className="fw-bold text-primary">₡{Number(v.total).toLocaleString()}</span>
                       </button>

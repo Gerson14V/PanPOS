@@ -75,6 +75,11 @@ export interface StockActualizado {
   stock_actual: number;
 }
 
+export interface ClienteActualizado {
+  id: number;
+  saldo_deudor: number;
+}
+
 export interface RespuestaVenta {
   id: number;
   numero_ticket: number;
@@ -83,4 +88,5 @@ export interface RespuestaVenta {
   estado: 'completada' | 'en_espera' | 'anulada';
   motivo_anulacion?: string | null;
   productos_actualizados?: StockActualizado[];
+  cliente_actualizado?: ClienteActualizado | null;
 }

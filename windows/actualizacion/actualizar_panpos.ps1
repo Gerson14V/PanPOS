@@ -146,6 +146,8 @@ function Ejecutar-Php([string[]]$argumentos) {
 $Artisan = Join-Path $App 'artisan'
 
 function Detener-PanPOS {
+    # Apagar primero el supervisor para que no reinicie php.exe al cerrarlo
+    Remove-Item (Join-Path $Destino 'servidor_activo.flag') -Force -ErrorAction SilentlyContinue
     # Servidor PHP de PanPOS (solo el que usa el puerto 8000)
     Get-CimInstance Win32_Process -Filter "Name='php.exe'" |
         Where-Object { $_.CommandLine -like "*$Puerto*" } |
@@ -219,15 +221,15 @@ try {
 
     # -----------------------------------------------------------------
     Titulo "5/7 Aplicando cambios a la base de datos (migraciones)..."
-    $m = Ejecutar-Php @($Artisan, 'migrate', '--force', '--no-interaction')
+    $m = Ejecutar-Php @('-d', 'opcache.enable_cli=0', $Artisan, 'migrate', '--force', '--no-interaction')
     Write-Host $m.Salida
     if ($m.Codigo -ne 0) { throw "Las migraciones fallaron." }
     Ok "Base de datos al dia."
 
     # -----------------------------------------------------------------
     Titulo "6/7 Optimizando PanPOS para esta computadora..."
-    $null = Ejecutar-Php @($Artisan, 'optimize:clear')
-    $o2 = Ejecutar-Php @($Artisan, 'optimize')
+    $null = Ejecutar-Php @('-d', 'opcache.enable_cli=0', $Artisan, 'optimize:clear')
+    $o2 = Ejecutar-Php @('-d', 'opcache.enable_cli=0', $Artisan, 'optimize')
     if ($o2.Codigo -ne 0) { throw "No se pudieron generar las caches: $($o2.Salida)" }
     Set-Content -Path (Join-Path $App 'bootstrap\cache\panpos_ruta.txt') -Value $Destino
     Copy-Item (Join-Path $Origen 'Iniciar_PanPOS.vbs') $Destino -Force

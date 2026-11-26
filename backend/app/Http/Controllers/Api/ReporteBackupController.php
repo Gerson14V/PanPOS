@@ -25,6 +25,11 @@ class ReporteBackupController extends Controller
 
     public function ventasPorPeriodo(Request $request): JsonResponse
     {
+        $request->validate([
+            'desde' => 'nullable|date_format:Y-m-d',
+            'hasta' => 'nullable|date_format:Y-m-d',
+        ]);
+
         $desde = $request->date('desde') ? $request->date('desde')->startOfDay() : now()->startOfDay();
         $hasta = $request->date('hasta') ? $request->date('hasta')->endOfDay() : now()->endOfDay();
 

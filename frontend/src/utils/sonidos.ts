@@ -5,12 +5,16 @@ let contexto: AudioContext | null = null;
 
 const obtenerContexto = (): AudioContext | null => {
   try {
-    if (!contexto) {
-      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!contexto || contexto.state === 'closed') {
+      const Ctor =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return null;
       contexto = new Ctor();
     }
-    if (contexto.state === 'suspended') void contexto.resume();
+    if (contexto.state === 'suspended') {
+      contexto.resume().catch(() => {});
+    }
     return contexto;
   } catch {
     return null;
@@ -18,18 +22,32 @@ const obtenerContexto = (): AudioContext | null => {
 };
 
 const tono = (frecuencia: number, duracionMs: number, inicioMs = 0, volumen = 0.08) => {
-  const ctx = obtenerContexto();
-  if (!ctx) return;
-  const inicio = ctx.currentTime + inicioMs / 1000;
-  const osc = ctx.createOscillator();
-  const ganancia = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.value = frecuencia;
-  ganancia.gain.setValueAtTime(volumen, inicio);
-  ganancia.gain.exponentialRampToValueAtTime(0.0001, inicio + duracionMs / 1000);
-  osc.connect(ganancia).connect(ctx.destination);
-  osc.start(inicio);
-  osc.stop(inicio + duracionMs / 1000 + 0.02);
+  try {
+    const ctx = obtenerContexto();
+    if (!ctx) return;
+    const inicio = ctx.currentTime + inicioMs / 1000;
+    const fin = inicio + duracionMs / 1000;
+    const osc = ctx.createOscillator();
+    const ganancia = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = frecuencia;
+    ganancia.gain.setValueAtTime(volumen, inicio);
+    ganancia.gain.exponentialRampToValueAtTime(0.0001, fin);
+    osc.connect(ganancia).connect(ctx.destination);
+    // Desconectar nodos al terminar para evitar acumulación de memoria en turnos largos
+    osc.onended = () => {
+      try {
+        osc.disconnect();
+        ganancia.disconnect();
+      } catch {
+        // Ignorar si el contexto ya cerró
+      }
+    };
+    osc.start(inicio);
+    osc.stop(fin + 0.02);
+  } catch {
+    // Un fallo de audio nunca debe interrumpir el cobro ni el escaneo
+  }
 };
 
 export const sonidos = {

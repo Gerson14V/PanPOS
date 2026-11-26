@@ -89,6 +89,11 @@ class VentaService
                         $productosBloqueados[$prodId] = Producto::lockForUpdate()->findOrFail($prodId);
                     }
                     $producto = $productosBloqueados[$prodId];
+                    if (!$producto->activo) {
+                        throw ValidationException::withMessages([
+                            'items' => "El producto \"{$producto->nombre}\" fue eliminado o desactivado del catálogo.",
+                        ]);
+                    }
                     $costoHistorico = (float) $producto->precio_compra;
                     // Precio y nombre autoritativos desde la base de datos
                     $precioUnitario = (float) $producto->precio_venta;
@@ -113,6 +118,12 @@ class VentaService
             }
 
             if ($estado === 'completada') {
+                if (round($totalCalculado, 2) <= 0) {
+                    throw ValidationException::withMessages([
+                        'items' => 'El total de la venta debe ser mayor a ₡0.',
+                    ]);
+                }
+
                 foreach ($cantidadesPorProducto as $prodId => $cantTotal) {
                     $prod = $productosBloqueados[$prodId];
                     if ($prod->controlar_stock && (int) $prod->stock_actual < $cantTotal) {
@@ -172,6 +183,11 @@ class VentaService
                         if (empty($datos['cliente_id'])) {
                             throw ValidationException::withMessages([
                                 'cliente_id' => 'Debe seleccionar un cliente para registrar una venta a crédito (fiado).',
+                            ]);
+                        }
+                        if (!Cliente::where('id', $datos['cliente_id'])->where('activo', true)->exists()) {
+                            throw ValidationException::withMessages([
+                                'cliente_id' => 'El cliente seleccionado no existe o fue desactivado.',
                             ]);
                         }
                         $tieneCredito = true;

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { usePos } from '../context/PosContext';
-import { api } from '../api/client';
+import { api, mensajeError } from '../api/client';
 import { Producto } from '../types/models';
 
 export const ModuloProductosInventario: React.FC = () => {
@@ -25,17 +25,15 @@ export const ModuloProductosInventario: React.FC = () => {
   const [tipoMov, setTipoMov] = useState<'entrada' | 'ajuste' | 'merma'>('entrada');
   const [cantMov, setCantMov] = useState('');
   const [motivoMov, setMotivoMov] = useState('');
+  const [errorStockModal, setErrorStockModal] = useState<string | null>(null);
   const [guardandoStock, setGuardandoStock] = useState(false);
 
   const [modalKardex, setModalKardex] = useState(false);
   const [kardex, setKardex] = useState<any[]>([]);
   const kardexHabilitado = (configuracion['habilitar_bitacora_kardex'] ?? '0') === '1';
 
-  useEffect(() => {
-    if (departamentos.length > 0 && !departamentoId) {
-      setDepartamentoId(String(departamentos[0].id));
-    }
-  }, [departamentos, departamentoId]);
+  const departamentoSeleccionado =
+    departamentoId || (departamentos.length > 0 ? String(departamentos[0].id) : '');
 
   const pedirCodigoCorto = async () => {
     try {
@@ -55,13 +53,13 @@ export const ModuloProductosInventario: React.FC = () => {
   const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (guardandoProducto) return;
-    if (!departamentoId) {
+    if (!departamentoSeleccionado) {
       setMensaje({ tipo: 'danger', texto: 'Debe seleccionar un proveedor existente.' });
       return;
     }
 
     const payload = {
-      departamento_id: Number(departamentoId),
+      departamento_id: Number(departamentoSeleccionado),
       codigo_barras: codigoBarras.trim(),
       nombre: nombre.trim(),
       precio_compra: Math.max(0, Number(precioCompra) || 0),
@@ -84,8 +82,8 @@ export const ModuloProductosInventario: React.FC = () => {
       }
       limpiarFormulario();
       await recargarCatalogos();
-    } catch (err: any) {
-      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'Error al guardar el producto.' });
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'Error al guardar el producto.') });
     } finally {
       setGuardandoProducto(false);
     }
@@ -129,26 +127,28 @@ export const ModuloProductosInventario: React.FC = () => {
   const registrarMovimientoStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (guardandoStock || !prodAjuste || !usuario) return;
+    const cantidadNum = parseInt(cantMov, 10);
+    if (isNaN(cantidadNum) || cantidadNum === 0) {
+      setErrorStockModal('Digite una cantidad entera distinta de cero.');
+      return;
+    }
+    setErrorStockModal(null);
     setGuardandoStock(true);
     try {
       await api.post(`/productos/${prodAjuste.id}/stock`, {
         usuario_id: usuario.id,
         tipo: tipoMov,
-        cantidad: Number(cantMov),
+        cantidad: cantidadNum,
         motivo: motivoMov || 'Actualización de inventario',
       });
       setProdAjuste(null);
       setCantMov('');
       setMotivoMov('');
+      setErrorStockModal(null);
       await recargarCatalogos();
       setMensaje({ tipo: 'success', texto: 'Existencia de inventario actualizada.' });
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.errors?.stock?.[0] ||
-        err.response?.data?.message ||
-        'No se pudo actualizar el inventario.';
-      setMensaje({ tipo: 'danger', texto: msg });
-      setProdAjuste(null);
+    } catch (err) {
+      setErrorStockModal(mensajeError(err, 'No se pudo actualizar el inventario.'));
     } finally {
       setGuardandoStock(false);
     }
@@ -164,14 +164,14 @@ export const ModuloProductosInventario: React.FC = () => {
     }
   };
 
-  const listaFiltrada = productos.filter((p) => {
-    if (soloSinStock && (!p.controlar_stock || p.stock_actual > 0)) return false;
-    if (filtroProveedor && String(p.departamento_id) !== filtroProveedor) return false;
-    return (
-      p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      p.codigo_barras.toLowerCase().includes(busqueda.toLowerCase())
-    );
-  });
+  const listaFiltrada = useMemo(() => {
+    const q = busqueda.toLowerCase();
+    return productos.filter((p) => {
+      if (soloSinStock && (!p.controlar_stock || p.stock_actual > 0)) return false;
+      if (filtroProveedor && String(p.departamento_id) !== filtroProveedor) return false;
+      return p.nombre.toLowerCase().includes(q) || p.codigo_barras.toLowerCase().includes(q);
+    });
+  }, [productos, soloSinStock, filtroProveedor, busqueda]);
 
   return (
     <div className="container-fluid py-3">
@@ -256,7 +256,7 @@ export const ModuloProductosInventario: React.FC = () => {
                 <label className="form-label fw-semibold">Proveedor Asociado (Existente)</label>
                 <select
                   className="form-select fw-semibold"
-                  value={departamentoId}
+                  value={departamentoSeleccionado}
                   onChange={(e) => setDepartamentoId(e.target.value)}
                   required
                 >
@@ -381,7 +381,15 @@ export const ModuloProductosInventario: React.FC = () => {
                             Editar
                           </button>
                           {p.controlar_stock && (
-                            <button className="btn btn-success fw-semibold" onClick={() => setProdAjuste(p)}>
+                            <button
+                              className="btn btn-success fw-semibold"
+                              onClick={() => {
+                                setErrorStockModal(null);
+                                setCantMov('');
+                                setMotivoMov('');
+                                setProdAjuste(p);
+                              }}
+                            >
                               +/- Stock
                             </button>
                           )}
@@ -408,6 +416,7 @@ export const ModuloProductosInventario: React.FC = () => {
                 <button type="button" className="btn-close" onClick={() => setProdAjuste(null)} />
               </div>
               <div className="modal-body">
+                {errorStockModal && <div className="alert alert-danger py-2 fw-semibold">{errorStockModal}</div>}
                 <p className="mb-2">Existencia actual: <strong>{prodAjuste.stock_actual} unidades</strong></p>
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Operación</label>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { usePos } from '../context/PosContext';
 import { api, generarClaveIdempotencia, mensajeError, postConReintento } from '../api/client';
 import { Cliente } from '../types/models';
@@ -13,6 +13,8 @@ export const ModuloClientes: React.FC = () => {
 
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null);
   const [detalleCuenta, setDetalleCuenta] = useState<{ ventas_fiadas: any[]; prestamos_y_abonos: any[] } | null>(null);
+  const [cargandoCuenta, setCargandoCuenta] = useState(false);
+  const consultaCuentaRef = useRef(0);
 
   const [modalCliente, setModalCliente] = useState(false);
   const [nombre, setNombre] = useState('');
@@ -29,7 +31,7 @@ export const ModuloClientes: React.FC = () => {
   const [procesandoOp, setProcesandoOp] = useState(false);
   const [claveOperacion, setClaveOperacion] = useState('');
 
-  const cargarEfectivoCaja = async () => {
+  const cargarEfectivoCaja = useCallback(async () => {
     if (!turno) return;
     try {
       const res = await api.get(`/turnos/${turno.id}/efectivo`);
@@ -37,27 +39,53 @@ export const ModuloClientes: React.FC = () => {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [turno]);
 
   useEffect(() => {
-    cargarEfectivoCaja();
-  }, [turno, clientes]);
+    if (!turno?.id) return;
+    let cancelado = false;
+    api
+      .get(`/turnos/${turno.id}/efectivo`)
+      .then((res) => {
+        if (!cancelado) setEfectivoDisponibleCaja(Number(res.data.efectivo_disponible || 0));
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [turno?.id]);
 
-  const clientesFiltrados = clientes.filter((c) => {
-    if (soloDeudores && Number(c.saldo_deudor) <= 0) return false;
-    return c.nombre.toLowerCase().includes(busqueda.toLowerCase());
-  });
+  const clientesFiltrados = useMemo(() => {
+    const q = busqueda.toLowerCase();
+    return clientes.filter((c) => {
+      if (soloDeudores && Number(c.saldo_deudor) <= 0) return false;
+      return c.nombre.toLowerCase().includes(q);
+    });
+  }, [clientes, soloDeudores, busqueda]);
 
-  const totalDeudaGeneral = clientes.reduce((acc, c) => acc + Number(c.saldo_deudor), 0);
+  const totalDeudaGeneral = useMemo(
+    () => clientes.reduce((acc, c) => acc + Number(c.saldo_deudor), 0),
+    [clientes]
+  );
 
   const verEstadoCuenta = async (cliente: Cliente) => {
+    const idConsulta = ++consultaCuentaRef.current;
     setClienteSeleccionado(cliente);
+    setDetalleCuenta(null);
+    setCargandoCuenta(true);
     try {
       const res = await api.get(`/clientes/${cliente.id}/estado-cuenta`);
+      if (idConsulta !== consultaCuentaRef.current) return;
       setDetalleCuenta(res.data.cliente ? res.data : null);
-      setClienteSeleccionado(res.data.cliente);
+      if (res.data.cliente) setClienteSeleccionado(res.data.cliente);
     } catch {
-      setAlerta({ tipo: 'danger', texto: 'No se pudo cargar el estado de cuenta del cliente.' });
+      if (idConsulta === consultaCuentaRef.current) {
+        setAlerta({ tipo: 'danger', texto: 'No se pudo cargar el estado de cuenta del cliente.' });
+      }
+    } finally {
+      if (idConsulta === consultaCuentaRef.current) {
+        setCargandoCuenta(false);
+      }
     }
   };
 
@@ -296,10 +324,17 @@ export const ModuloClientes: React.FC = () => {
               </div>
 
               <div className="card-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                {cargandoCuenta ? (
+                  <div className="text-center text-muted py-4">
+                    <div className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
+                    Cargando estado de cuenta...
+                  </div>
+                ) : (
+                  <>
                 <h6 className="fw-bold text-primary border-bottom pb-2">
                   Historial de Préstamos de Efectivo y Abonos
                 </h6>
-                {detalleCuenta?.prestamos_y_abonos.length === 0 ? (
+                {!detalleCuenta || detalleCuenta.prestamos_y_abonos.length === 0 ? (
                   <p className="text-muted small">Sin préstamos ni abonos registrados.</p>
                 ) : (
                   <table className="table table-sm align-middle mb-4">
@@ -313,7 +348,7 @@ export const ModuloClientes: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {detalleCuenta?.prestamos_y_abonos.map((m: any) => (
+                      {detalleCuenta.prestamos_y_abonos.map((m: any) => (
                         <tr key={m.id}>
                           <td className="small">{new Date(m.created_at).toLocaleString()}</td>
                           <td>
@@ -333,17 +368,17 @@ export const ModuloClientes: React.FC = () => {
                 <h6 className="fw-bold text-primary border-bottom pb-2">
                   Tickets y Productos Llevados al Crédito (Fiados)
                 </h6>
-                {detalleCuenta?.ventas_fiadas.length === 0 ? (
+                {!detalleCuenta || detalleCuenta.ventas_fiadas.length === 0 ? (
                   <p className="text-muted small">No tiene tickets de compra asociados.</p>
                 ) : (
-                  detalleCuenta?.ventas_fiadas.map((v: any) => (
+                  detalleCuenta.ventas_fiadas.map((v: any) => (
                     <div key={v.id} className="border rounded p-2 mb-2 bg-body-tertiary">
                       <div className="d-flex justify-content-between fw-bold">
                         <span>Ticket #{numeroTicket(v)} — {new Date(v.created_at).toLocaleString()}</span>
                         <span className="text-danger">Total Ticket: ₡{Number(v.total).toLocaleString()}</span>
                       </div>
                       <ul className="mb-0 small mt-1">
-                        {v.detalles.map((d: any) => (
+                        {(v.detalles || []).map((d: any) => (
                           <li key={d.id}>
                             {d.cantidad}x {d.descripcion_producto} — ₡{Number(d.subtotal).toLocaleString()}
                           </li>
@@ -351,6 +386,8 @@ export const ModuloClientes: React.FC = () => {
                       </ul>
                     </div>
                   ))
+                )}
+                  </>
                 )}
               </div>
             </div>

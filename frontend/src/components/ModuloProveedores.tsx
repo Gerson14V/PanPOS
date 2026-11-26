@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePos } from '../context/PosContext';
-import { api } from '../api/client';
+import { api, mensajeError } from '../api/client';
 import { fechaLocalISO } from '../utils/fechaLocal';
 import { Departamento } from '../types/models';
 
@@ -11,15 +11,17 @@ export const ModuloProveedores: React.FC = () => {
   const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'danger'; texto: string } | null>(null);
   const [guardandoProveedor, setGuardandoProveedor] = useState(false);
 
-  const hoy = fechaLocalISO();
-  const [desde, setDesde] = useState(hoy);
-  const [hasta, setHasta] = useState(hoy);
+  const [desde, setDesde] = useState(() => fechaLocalISO());
+  const [hasta, setHasta] = useState(() => fechaLocalISO());
   const [reporte, setReporte] = useState<any | null>(null);
   const [proveedorSeleccionadoId, setProveedorSeleccionadoId] = useState<number | null>(null);
+  const consultaRef = useRef(0);
 
-  const consultarVentasProveedores = async (fechaDesde = desde, fechaHasta = hasta) => {
+  const consultarVentasProveedores = useCallback(async (fechaDesde: string, fechaHasta: string) => {
+    const idConsulta = ++consultaRef.current;
     try {
       const res = await api.get(`/reportes/ventas-periodo?desde=${fechaDesde}&hasta=${fechaHasta}`);
+      if (idConsulta !== consultaRef.current) return;
       setReporte(res.data);
       const ranking = res.data.ranking_proveedores || [];
       if (ranking.length > 0) {
@@ -27,14 +29,17 @@ export const ModuloProveedores: React.FC = () => {
           prev !== null && ranking.some((r: any) => r.id === prev) ? prev : ranking[0].id
         );
       }
-    } catch {
-      setMensaje({ tipo: 'danger', texto: 'No se pudo consultar el reporte de proveedores.' });
+    } catch (err) {
+      if (idConsulta === consultaRef.current) {
+        setMensaje({ tipo: 'danger', texto: mensajeError(err, 'No se pudo consultar el reporte de proveedores.') });
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
-    consultarVentasProveedores();
-  }, []);
+    const hoy = fechaLocalISO();
+    void consultarVentasProveedores(hoy, hoy);
+  }, [consultarVentasProveedores]);
 
   const aplicarRangoRapido = (tipo: 'hoy' | 'semana' | 'mes') => {
     const ahora = new Date();
@@ -64,7 +69,7 @@ export const ModuloProveedores: React.FC = () => {
         setNombreNuevo('');
       }
       await recargarCatalogos();
-      await consultarVentasProveedores();
+      await consultarVentasProveedores(desde, hasta);
       setMensaje({ tipo: 'success', texto: `Proveedor "${dep.nombre}" eliminado correctamente.` });
     } catch (err: any) {
       const msg = err.response?.data?.errors?.proveedor?.[0] || err.response?.data?.message || 'No se pudo eliminar el proveedor.';
@@ -87,9 +92,9 @@ export const ModuloProveedores: React.FC = () => {
       setNombreNuevo('');
       setEditando(null);
       await recargarCatalogos();
-      await consultarVentasProveedores();
-    } catch (err: any) {
-      setMensaje({ tipo: 'danger', texto: err.response?.data?.message || 'Ya existe un proveedor con ese nombre.' });
+      await consultarVentasProveedores(desde, hasta);
+    } catch (err) {
+      setMensaje({ tipo: 'danger', texto: mensajeError(err, 'Ya existe un proveedor con ese nombre.') });
     } finally {
       setGuardandoProveedor(false);
     }
@@ -351,7 +356,7 @@ export const ModuloProveedores: React.FC = () => {
                   <tbody>
                     {proveedorDetalle.productos.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center text-muted py-4">
+                        <td colSpan={usuario?.rol === 'admin' ? 6 : 5} className="text-center text-muted py-4">
                           Este proveedor aún no tiene productos registrados en F3 Productos/Inventario.
                         </td>
                       </tr>

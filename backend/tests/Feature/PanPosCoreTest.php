@@ -440,4 +440,92 @@ class PanPosCoreTest extends TestCase
 
         \Illuminate\Support\Carbon::setTestNow();
     }
+
+    public function test_auditoria_estabilidad_productos_clientes_fechas_y_autoeliminacion(): void
+    {
+        [$prod, $turnoId] = $this->prepararCaja();
+
+        // 1. stock_minimo se respeta al crear producto
+        $creado = $this->postJson('/api/productos', [
+            'departamento_id' => $prod->departamento_id,
+            'codigo_barras' => '09',
+            'nombre' => 'Pan Integral',
+            'precio_compra' => 400,
+            'precio_venta' => 900,
+            'controlar_stock' => true,
+            'stock_actual' => 10,
+            'stock_minimo' => 3,
+        ])->assertStatus(201);
+        $this->assertSame(3, (int) $creado->json('stock_minimo'));
+
+        // 2. Producto desactivado no se puede vender
+        $prod->update(['activo' => false]);
+        $this->postJson('/api/ventas', [
+            'idempotency_key' => 'venta-inactivo-1',
+            'turno_id' => $turnoId,
+            'estado' => 'completada',
+            'items' => [['producto_id' => $prod->id, 'cantidad' => 1]],
+            'pagos' => [['metodo_pago' => 'efectivo', 'monto' => 700]],
+        ])->assertStatus(422)->assertJsonValidationErrors('items');
+        $prod->update(['activo' => true]);
+
+        // 3. Venta y anulación a crédito devuelven cliente_actualizado con saldo exacto
+        $cliente = Cliente::create(['nombre' => 'Doña Marta', 'saldo_deudor' => 0, 'activo' => true]);
+        $ventaCredito = $this->postJson('/api/ventas', [
+            'idempotency_key' => 'credito-saldo-1',
+            'turno_id' => $turnoId,
+            'cliente_id' => $cliente->id,
+            'estado' => 'completada',
+            'items' => [['producto_id' => $prod->id, 'cantidad' => 1]],
+            'pagos' => [['metodo_pago' => 'credito', 'monto' => 700]],
+        ])->assertStatus(201);
+        $this->assertSame(['id' => $cliente->id, 'saldo_deudor' => 700], $ventaCredito->json('cliente_actualizado'));
+
+        // Abono total deja saldo exactamente en 0
+        $this->postJson("/api/clientes/{$cliente->id}/operacion-credito", [
+            'turno_id' => $turnoId,
+            'tipo' => 'abono_cliente',
+            'metodo_pago' => 'efectivo',
+            'monto' => 700,
+            'concepto' => 'Cancela cuenta',
+        ])->assertStatus(201);
+        $this->assertEquals(0.0, (float) $cliente->fresh()->saldo_deudor);
+
+        // 4. Cliente desactivado no puede recibir crédito ni préstamo
+        $cliente->update(['activo' => false]);
+        $this->postJson('/api/ventas', [
+            'idempotency_key' => 'credito-inactivo-1',
+            'turno_id' => $turnoId,
+            'cliente_id' => $cliente->id,
+            'estado' => 'completada',
+            'items' => [['producto_id' => $prod->id, 'cantidad' => 1]],
+            'pagos' => [['metodo_pago' => 'credito', 'monto' => 700]],
+        ])->assertStatus(422)->assertJsonValidationErrors('cliente_id');
+
+        $this->postJson("/api/clientes/{$cliente->id}/operacion-credito", [
+            'turno_id' => $turnoId,
+            'tipo' => 'prestamo_cliente',
+            'metodo_pago' => 'efectivo',
+            'monto' => 500,
+            'concepto' => 'Préstamo bloqueado',
+        ])->assertStatus(422)->assertJsonValidationErrors('cliente_id');
+
+        // 5. Reporte por periodo valida fechas (422 en lugar de 500)
+        $this->getJson('/api/reportes/ventas-periodo?desde=fecha-mala&hasta=2026-11-25')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('desde');
+
+        // 6. Un administrador no puede eliminarse a sí mismo (aunque haya otro admin)
+        Usuario::create([
+            'nombre' => 'Otro Admin',
+            'username' => 'admin2',
+            'password' => '1234',
+            'rol' => 'admin',
+            'activo' => true,
+        ]);
+        $adminActual = Usuario::where('username', 'admincaja')->firstOrFail();
+        $this->deleteJson("/api/usuarios/{$adminActual->id}")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('usuario');
+    }
 }

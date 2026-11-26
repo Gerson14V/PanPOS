@@ -255,9 +255,7 @@ body {
   background-repeat: no-repeat;
   background-position: center 78%;
   background-size: 460px auto;
-  opacity: 0.28;
-  filter: blur(0.4px) saturate(1.25);
-  mix-blend-mode: multiply;
+  opacity: 0.22;
   pointer-events: none;
   z-index: 0;
 }

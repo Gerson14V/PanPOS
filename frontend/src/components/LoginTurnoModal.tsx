@@ -8,25 +8,29 @@ export const LoginTurnoModal: React.FC = () => {
   const { usuario, setUsuario, turno, setTurno, configuracion, carrito, recargarCatalogos } = usePos();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [montoInicial, setMontoInicial] = useState('10000');
+  const [montoInicial, setMontoInicial] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
   const [ultimoCierre, setUltimoCierre] = useState<{ id: number; fecha_cierre: string } | null>(null);
 
-  useEffect(() => {
-    if (configuracion['fondo_inicial_sugerido']) {
-      setMontoInicial(configuracion['fondo_inicial_sugerido']);
-    }
-  }, [configuracion]);
+  const montoInicialValor = montoInicial ?? configuracion['fondo_inicial_sugerido'] ?? '10000';
 
   // En la pantalla de apertura: saber cuándo se cerró el último turno
   const mostrandoApertura = !!usuario && !turno;
   useEffect(() => {
     if (!mostrandoApertura) return;
+    let cancelado = false;
     api
       .get('/sistema/publico')
-      .then((res) => setUltimoCierre(res.data.ultimo_cierre || null))
-      .catch(() => setUltimoCierre(null));
+      .then((res) => {
+        if (!cancelado) setUltimoCierre(res.data.ultimo_cierre || null);
+      })
+      .catch(() => {
+        if (!cancelado) setUltimoCierre(null);
+      });
+    return () => {
+      cancelado = true;
+    };
   }, [mostrandoApertura]);
 
   const cierreDeHoy =
@@ -71,8 +75,9 @@ export const LoginTurnoModal: React.FC = () => {
     setCargando(true);
     try {
       const res = await api.post('/turnos/abrir', {
-        monto_inicial: Number(montoInicial),
+        monto_inicial: Number(montoInicialValor),
       });
+      setMontoInicial(null);
       setTurno(res.data);
     } catch (err) {
       setError(mensajeError(err, 'Error al abrir el turno de caja.'));
@@ -87,8 +92,7 @@ export const LoginTurnoModal: React.FC = () => {
     <div
       className="modal d-block"
       style={{
-        backgroundColor: 'rgba(24, 18, 14, 0.88)',
-        backdropFilter: 'blur(4px)',
+        backgroundColor: 'rgba(24, 18, 14, 0.92)',
       }}
     >
       <div className="modal-dialog modal-lg modal-dialog-centered">
@@ -216,7 +220,7 @@ export const LoginTurnoModal: React.FC = () => {
                       min="0"
                       step="any"
                       className="form-control form-control-lg fw-bold fs-4"
-                      value={montoInicial}
+                      value={montoInicialValor}
                       onChange={(e) => setMontoInicial(e.target.value)}
                       autoFocus
                       required

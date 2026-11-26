@@ -42,15 +42,18 @@ class TurnoCajaService
             ->when($hasta, fn ($q) => $q->where('ventas.created_at', '<', $hasta))
             ->sum('pagos_venta.monto');
 
-        $movimientos = $turno->movimientosCaja()
+        $movPorTipo = DB::table('movimientos_caja')
+            ->where('turno_id', $turno->id)
             ->where('metodo_pago', 'efectivo')
             ->when($hasta, fn ($q) => $q->where('created_at', '<', $hasta))
-            ->get();
+            ->selectRaw('tipo, COALESCE(SUM(monto), 0) as total')
+            ->groupBy('tipo')
+            ->pluck('total', 'tipo');
 
-        $entradas = (float) $movimientos->where('tipo', 'entrada')->sum('monto');
-        $abonos = (float) $movimientos->where('tipo', 'abono_cliente')->sum('monto');
-        $salidas = (float) $movimientos->where('tipo', 'salida')->sum('monto');
-        $prestamos = (float) $movimientos->where('tipo', 'prestamo_cliente')->sum('monto');
+        $entradas = (float) ($movPorTipo['entrada'] ?? 0);
+        $abonos = (float) ($movPorTipo['abono_cliente'] ?? 0);
+        $salidas = (float) ($movPorTipo['salida'] ?? 0);
+        $prestamos = (float) ($movPorTipo['prestamo_cliente'] ?? 0);
 
         return round((float) $turno->monto_inicial + $ventasEfectivo + $entradas + $abonos - $salidas - $prestamos, 2);
     }
@@ -116,9 +119,14 @@ class TurnoCajaService
                             'monto' => "No se puede abonar más de lo que debe. Deuda actual de {$cliente->nombre}: ₡" . number_format($deudaActual, 2) . ".",
                         ]);
                     }
-                    $cliente->decrement('saldo_deudor', $monto);
+                    $cliente->update(['saldo_deudor' => max(0, round($deudaActual - $monto, 2))]);
                 } elseif ($datos['tipo'] === 'prestamo_cliente') {
-                    $cliente->increment('saldo_deudor', $monto);
+                    if (!$cliente->activo) {
+                        throw ValidationException::withMessages([
+                            'cliente_id' => "El cliente {$cliente->nombre} fue desactivado y no puede recibir préstamos.",
+                        ]);
+                    }
+                    $cliente->update(['saldo_deudor' => round($deudaActual + $monto, 2)]);
                 }
             }
 
@@ -213,8 +221,8 @@ class TurnoCajaService
 
         $bloques = $this->construirBloquesResumen(['desde' => $desde, 'hasta' => $hasta], $efectivoInicial);
 
-        $siguenAbiertos = $turnos->filter(fn (TurnoCaja $t) => $t->estado === 'abierto' || $t->fecha_cierre->gt($hasta));
-        $cerradosEseDia = $turnos->filter(fn (TurnoCaja $t) => $t->estado === 'cerrado' && $t->fecha_cierre->between($desde, $hasta));
+        $siguenAbiertos = $turnos->filter(fn (TurnoCaja $t) => $t->estado === 'abierto' || $t->fecha_cierre?->gt($hasta));
+        $cerradosEseDia = $turnos->filter(fn (TurnoCaja $t) => $t->estado === 'cerrado' && $t->fecha_cierre?->between($desde, $hasta));
         $cajeros = $turnos->pluck('usuario.nombre')->filter()->unique()->values()->all();
 
         $estado = 'cerrado';

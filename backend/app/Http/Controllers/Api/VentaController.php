@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Cliente;
 use App\Models\Producto;
 use App\Models\Venta;
 use App\Services\VentaService;
@@ -98,6 +99,20 @@ class VentaController extends Controller
                 ->map(fn ($p) => ['id' => $p->id, 'stock_actual' => (int) $p->stock_actual])
                 ->values();
 
-        return array_merge($venta->toArray(), ['productos_actualizados' => $productos]);
+        $clienteActualizado = null;
+        if ($venta->cliente_id) {
+            $cli = Cliente::find($venta->cliente_id, ['id', 'saldo_deudor']);
+            if ($cli) {
+                $clienteActualizado = [
+                    'id' => $cli->id,
+                    'saldo_deudor' => round((float) $cli->saldo_deudor, 2),
+                ];
+            }
+        }
+
+        return array_merge($venta->toArray(), [
+            'productos_actualizados' => $productos,
+            'cliente_actualizado' => $clienteActualizado,
+        ]);
     }
 }

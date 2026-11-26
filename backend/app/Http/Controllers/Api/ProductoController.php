@@ -53,7 +53,7 @@ class ProductoController extends Controller
             $usuarioId = $datos['usuario_id'] ?? null;
             unset($datos['usuario_id']);
 
-            $datos['stock_minimo'] = 0;
+            $datos['stock_minimo'] = max(0, (int) ($datos['stock_minimo'] ?? 0));
             $datos['stock_actual'] = ($datos['controlar_stock'] && $stockInicial > 0 && empty($usuarioId))
                 ? $stockInicial
                 : 0;
@@ -99,10 +99,12 @@ class ProductoController extends Controller
         $tieneVentas = DB::table('detalle_ventas')->where('producto_id', $producto->id)->exists();
 
         if ($tieneVentas) {
+            $sufijo = '_DEL_' . $producto->id . '_' . time();
+            $baseCodigo = substr($producto->codigo_barras, 0, max(1, 50 - strlen($sufijo)));
             $producto->update([
                 'activo' => false,
                 'mostrar_boton_rapido' => false,
-                'codigo_barras' => $producto->codigo_barras . '_DEL_' . time(),
+                'codigo_barras' => $baseCodigo . $sufijo,
             ]);
         } else {
             $producto->movimientosInventario()->delete();

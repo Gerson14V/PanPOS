@@ -16,7 +16,7 @@ class ReporteExcelDiarioService
         $rutaConfig = trim((string) ConfiguracionSistema::where('clave', 'ruta_excel_maestro')->value('valor'));
         if ($rutaConfig !== '') {
             if (is_dir($rutaConfig)) {
-                return rtrim($rutaConfig, DIRECTORY_SEPARATOR) . '/Ventas_Diarias_PanPOS.xls';
+                return rtrim($rutaConfig, '/\\') . DIRECTORY_SEPARATOR . 'Ventas_Diarias_PanPOS.xls';
             }
             $dirPadre = dirname($rutaConfig);
             if (is_dir($dirPadre) && is_writable($dirPadre)) {
@@ -77,6 +77,8 @@ class ReporteExcelDiarioService
             ->pluck('total', 'fecha');
 
         $cierresPorDia = TurnoCaja::where('estado', 'cerrado')
+            ->whereNotNull('fecha_cierre')
+            ->select(['id', 'fecha_cierre', 'total_efectivo_contado', 'diferencia_arqueo'])
             ->orderBy('fecha_cierre')
             ->get()
             ->groupBy(fn (TurnoCaja $t) => $t->fecha_cierre->toDateString());
