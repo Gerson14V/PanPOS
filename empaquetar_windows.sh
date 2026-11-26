@@ -94,10 +94,10 @@ PANPOS - INSTALADOR PARA WINDOWS ($VERSION)
 COMPILAR EL .EXE (una sola vez, en cualquier PC con Windows)
 1. Instale Inno Setup 6 (gratuito): https://jrsoftware.org/isdl.php
 2. Abra PanPOS_Setup.iss con Inno Setup y presione Ctrl+F9 (Compilar).
-3. Se crea Instalar_PanPOS_1.1.3.exe en esta misma carpeta.
+3. Se crea Instalar_PanPOS_1.1.4.exe en esta misma carpeta.
 
 INSTALAR
-- Ejecute Instalar_PanPOS_1.1.3.exe y siga los pasos (carpeta C:\PanPOS).
+- Ejecute Instalar_PanPOS_1.1.4.exe y siga los pasos (carpeta C:\PanPOS).
 - Usuario inicial: admin / admin123  (cambie la contrasena en Configuracion > Cajeros)
 
 SEGURIDAD DE LOS DATOS

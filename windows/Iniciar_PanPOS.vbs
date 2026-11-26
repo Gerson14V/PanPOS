@@ -68,6 +68,22 @@ Sub DetenerServidores()
     WScript.Sleep 600
 End Sub
 
+' Edge/Chrome usando el perfil propio de PanPOS (browser_profile)
+Function NavegadorPanPOSAbierto()
+    Dim wmi, lista, p, abierto
+    abierto = False
+    On Error Resume Next
+    Set wmi = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
+    Set lista = wmi.ExecQuery("SELECT CommandLine FROM Win32_Process WHERE Name = 'msedge.exe' OR Name = 'chrome.exe'")
+    For Each p In lista
+        If Not IsNull(p.CommandLine) Then
+            If InStr(1, p.CommandLine, base & "\browser_profile", vbTextCompare) > 0 Then abierto = True
+        End If
+    Next
+    Err.Clear
+    NavegadorPanPOSAbierto = abierto
+End Function
+
 ' Ejecuta artisan oculto sin reservar memoria de OPcache para comandos cortos.
 ' Devuelve el codigo de salida de PHP (0 = exito).
 Function Artisan(argumentos)
@@ -274,6 +290,14 @@ extras = " --disable-gpu --disable-gpu-compositing --disable-extensions --disabl
 
 ' Activado desde Configuracion > Impresora: imprime tiquetes sin dialogo
 If fso.FileExists(base & "\impresion_silenciosa.activar") Then extras = extras & " --kiosk-printing"
+
+' Ya hay una ventana de PanPOS: se trae al frente en vez de abrir otra (dos ventanas
+' con el mismo usuario se cierran la sesion una a la otra). Se busca el titulo de la
+' pagina ("PanPOS - Panaderia ...") y no solo "PanPOS", que tambien coincidiria con
+' carpetas abiertas como "PanPOS_Actualizacion_...".
+If NavegadorPanPOSAbierto() Then
+    If shell.AppActivate("PanPOS - Panader") Then WScript.Quit 0
+End If
 
 navegadores = Array( _
     "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", _
